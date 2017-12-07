@@ -1,0 +1,5 @@
+add_subdirectory(httpd)
+add_subdirectory(seawreck)
+add_subdirectory(io_tester)
+add_subdirectory(memcached)
+add_subdirectory(iotune)

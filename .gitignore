@@ -4,3 +4,39 @@
 build
 build.ninja
 cscope.*
+
+# artifacts
+*.a
+tests/seastar_fileiotest
+
+# cmake
+CMakeCache.txt
+CMakeFiles
+Makefile
+cmake_install.cmake
+
+# editors
+.*.swp
+
+# tests
+tests/seastar_*
+tests/memcached/seastar_*
+tests/perf/seastar_*
+
+# apps
+apps/httpd/httpd
+apps/io_tester/io_tester
+apps/iotune/iotune
+apps/memcached/memcached
+apps/seawreck/seawreck
+
+# protobuf/ragel/swagger generated
+apps/memcached/ascii.hh
+apps/memcached/ascii_raw.hh
+http/request_parser.hh
+http/request_parser_raw.hh
+apps/httpd/demo.json.hh
+http/http_response_parser.hh
+http/http_response_parser_raw.hh
+*.pb.h
+*.pb.cc

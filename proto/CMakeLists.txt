@@ -1,0 +1,2 @@
+PROTOBUF_GENERATE_CPP(PROTO_SRCS PROTO_HDRS metrics2.proto)
+add_library(metrics2_proto OBJECT ${PROTO_SRCS} ${PROTO_HDRS})
