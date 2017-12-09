@@ -85,13 +85,16 @@ ${RAGEL_version_error}")
       endif()
     endif()
 
+    get_filename_component(RAGEL_${Name}_OUTDIR ${Output} DIRECTORY)
+
     add_custom_command(OUTPUT ${Output}
+      COMMAND ${CMAKE_COMMAND} -E make_directory ${RAGEL_${Name}_OUTDIR}
       COMMAND ${RAGEL_EXECUTABLE}
-      ARGS    ${RAGEL_EXECUTABLE_opts} -o${Output} ${Input}
-      DEPENDS ${Input}
-      COMMENT
-          "[RAGEL][${Name}] Compiling state machine with Ragel ${RAGEL_VERSION}"
-      WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+      ARGS    ${RAGEL_EXECUTABLE_opts} -o ${CMAKE_CURRENT_BINARY_DIR}/${Output} ${CMAKE_CURRENT_SOURCE_DIR}/${Input}
+      COMMAND sed
+      ARGS -i -e '1h\;2,$$H\;$$!d\;g' -re 's/static const char _nfa[^;]*\;//g' ${CMAKE_CURRENT_BINARY_DIR}/${Output}
+      DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/${Input}
+      COMMENT "[RAGEL][${Name}] Compiling state machine with Ragel ${RAGEL_VERSION}")
 
     set(RAGEL_${Name}_DEFINED       TRUE)
     set(RAGEL_${Name}_OUTPUTS       ${Output})

@@ -3,7 +3,7 @@ project(seastar CXX C)
 
 # Wall
 
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake/modules/")
+list(APPEND CMAKE_MODULE_PATH "${PROJECT_SOURCE_DIR}/cmake/modules/")
 
 find_package(GnuTLS REQUIRED)
 find_package(Threads REQUIRED)
@@ -38,6 +38,7 @@ if(WITH_DPDK)
 endif()
 
 include_directories(
+  ${PROJECT_BINARY_DIR}
   ${PROJECT_SOURCE_DIR}
   ${PROJECT_SOURCE_DIR}/fmt)
 
@@ -57,18 +58,95 @@ set(CMAKE_C_STANDARD 99)
 #set(CMAKE_C_EXTENSIONS ON)
 set(C_STANDARD_REQUIRED ON)
 
-add_subdirectory(json)
-add_subdirectory(net)
-add_subdirectory(core)
-add_subdirectory(http)
 add_subdirectory(proto)
 
+set(NET_FILES
+  net/proxy.cc
+  net/virtio.cc
+  net/dpdk.cc
+  net/ip.cc
+  net/ethernet.cc
+  net/arp.cc
+  net/native-stack.cc
+  net/ip_checksum.cc
+  net/udp.cc
+  net/tcp.cc
+  net/dhcp.cc
+  net/tls.cc
+  net/dns.cc
+  net/packet.cc
+  net/posix-stack.cc
+  net/net.cc
+  net/stack.cc
+  net/inet_address.cc)
+
+set(CORE_FILES
+  core/reactor.cc
+  core/systemwide_memory_barrier.cc
+  core/fstream.cc
+  core/posix.cc
+  core/memory.cc
+  core/resource.cc
+  core/scollectd.cc
+  core/metrics.cc
+  core/app-template.cc
+  core/thread.cc
+  core/dpdk_rte.cc
+  core/fsqual.cc
+  core/exception_hacks.cc
+  core/prometheus.cc)
+
+set(RPC_FILES
+  rpc/rpc.cc
+  rpc/lz4_compressor.cc)
+
+set(UTIL_FILES
+  util/conversions.cc
+  util/program-options.cc
+  util/log.cc
+  util/backtrace.cc
+  util/alloc_failure_injector.cc)
+
+ragel_target(request_parser
+  http/request_parser.rl
+  http/request_parser.hh
+  COMPILE_FLAGS "-G2")
+
+ragel_target(http_response_parser
+  http/http_response_parser.rl
+  http/http_response_parser.hh
+  COMPILE_FLAGS "-G2")
+
+set(HTTP_FILES
+  http/transformers.cc
+  http/json_path.cc
+  http/file_handler.cc
+  http/common.cc
+  http/routes.cc
+  http/matcher.cc
+  http/mime_types.cc
+  http/httpd.cc
+  http/reply.cc
+  http/api_docs.cc
+  http/request_parser.hh
+  http/http_response_parser.hh)
+
+set(JSON_FILES
+  json/formatter.cc
+  json/json_elements.cc)
+
 add_library(seastar STATIC
-  $<TARGET_OBJECTS:core>
-  $<TARGET_OBJECTS:json>
-  $<TARGET_OBJECTS:net>
-  $<TARGET_OBJECTS:http>
+  ${CORE_FILES}
+  ${NET_FILES}
+  ${RPC_FILES}
+  ${UTIL_FILES}
+  ${HTTP_FILES}
+  ${JSON_FILES}
   $<TARGET_OBJECTS:metrics2_proto>)
+
+target_include_directories(seastar PUBLIC
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}>
+  $<BUILD_INTERFACE:${PROJECT_BINARY_DIR}>)
 
 target_link_libraries(seastar
   fmt
@@ -90,5 +168,8 @@ if(WITH_DPDK)
   target_link_libraries(seastar ${DPDK_LIBRARIES})
 endif(WITH_DPDK)
 
-add_subdirectory(apps)
-add_subdirectory(tests)
+option(SEASTAR_WITH_TESTS "Enable building apps and tests" ON)
+if(SEASTAR_WITH_TESTS)
+  add_subdirectory(apps)
+  add_subdirectory(tests)
+endif(SEASTAR_WITH_TESTS)

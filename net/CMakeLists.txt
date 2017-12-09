@@ -1,17 +1,4 @@
 set(NET_FILES
-  proxy.cc
-  virtio.cc
-  dpdk.cc
-  ip.cc
-  ethernet.cc
-  arp.cc
-  native-stack.cc
-  ip_checksum.cc
-  udp.cc
-  tcp.cc
-  dhcp.cc
-  tls.cc
-  dns.cc)
 
 add_library(net OBJECT ${NET_FILES})
 
