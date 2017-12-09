@@ -89,20 +89,20 @@ add_library (Seastar::seastar ALIAS seastar)
 # Link pools (only supported for the Ninja generator).
 #
 
-exec_program ("${CMAKE_CURRENT_SOURCE_DIR}/cmake-tools/query_link_pool_depth.py"
-  OUTPUT_VARIABLE link_pool_depth
-  RETURN_VALUE query_pool_depth_code)
-
-if (NOT ("${query_pool_depth_code}" STREQUAL 0))
-  MESSAGE (FATAL_ERROR "tools/query_link_pool_depth.py had a non-zero exit code.")
-endif ()
-
-set_property (GLOBAL PROPERTY
-  JOB_POOLS
-  seastar_link_pool=${link_pool_depth})
-
-set_property (GLOBAL PROPERTY
-  CMAKE_JOB_POOL_LINK seastar_link_pool)
+###exec_program ("${CMAKE_CURRENT_SOURCE_DIR}/cmake-tools/query_link_pool_depth.py"
+###  OUTPUT_VARIABLE link_pool_depth
+###  RETURN_VALUE query_pool_depth_code)
+###
+###if (NOT ("${query_pool_depth_code}" STREQUAL 0))
+###  MESSAGE (FATAL_ERROR "tools/query_link_pool_depth.py had a non-zero exit code.")
+###endif ()
+###
+###set_property (GLOBAL PROPERTY
+###  JOB_POOLS
+###  seastar_link_pool=${link_pool_depth})
+###
+###set_property (GLOBAL PROPERTY
+###  CMAKE_JOB_POOL_LINK seastar_link_pool)
 
 #
 # External projects.
@@ -506,7 +506,7 @@ target_link_libraries (seastar PUBLIC
   ${CMAKE_THREAD_LIBS_INIT}
   ${GNUTLS_LIBRARIES}
   ${Protobuf_LIBRARIES}
-  ${Protobuf_PROTOC_LIBRARIES}
+  #${Protobuf_PROTOC_LIBRARIES}
   ${RT_LIBRARY}
   ${AIO_LIBRARY}
   Boost::boost # Headers only.
