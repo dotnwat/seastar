@@ -213,7 +213,7 @@ find_package (Boost 1.64.0 REQUIRED
 find_package (c-ares 1.13.0 REQUIRED MODULE)
 find_package (cryptopp 5.6.5 REQUIRED)
 # No version information published.
-find_package (dpdk)
+#find_package (dpdk)
 find_package (fmt 4.0.0 REQUIRED)
 find_package (lz4 1.7.3 REQUIRED)
 
@@ -655,9 +655,9 @@ if (Seastar_CXX_FLAGS)
 endif ()
 
 if (Seastar_DPDK)
-  if (NOT dpdk_FOUND)
-    message (FATAL_ERROR "dpdk support is enabled but it is not available!")
-  endif ()
+  #  if (NOT dpdk_FOUND)
+  #    message (FATAL_ERROR "dpdk support is enabled but it is not available!")
+  #  endif ()
 
   target_compile_definitions (seastar
     PUBLIC SEASTAR_HAVE_DPDK)
