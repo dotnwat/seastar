@@ -408,19 +408,19 @@ endfunction ()
 seastar_generate_ragel (
   TARGET seastar_http_chunk_parsers
   VAR http_chunk_parsers_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/http/chunk_parsers.rl
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/include/seastar/http/chunk_parsers.rl
   OUT_FILE ${Seastar_GEN_BINARY_DIR}/include/seastar/http/chunk_parsers.hh)
 
 seastar_generate_ragel (
   TARGET seastar_http_request_parser
   VAR http_request_parser_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/http/request_parser.rl
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/include/seastar/http/request_parser.rl
   OUT_FILE ${Seastar_GEN_BINARY_DIR}/include/seastar/http/request_parser.hh)
 
 seastar_generate_ragel (
   TARGET seastar_http_response_parser
   VAR http_response_parser_file
-  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/http/response_parser.rl
+  IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/include/seastar/http/response_parser.rl
   OUT_FILE ${Seastar_GEN_BINARY_DIR}/include/seastar/http/response_parser.hh)
 
 if (Seastar_DPDK)
