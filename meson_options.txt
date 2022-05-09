@@ -1,0 +1,11 @@
+option('num_scheduling_groups', type: 'integer', min: 1, value: 16,
+  description: 'Allowed number of scheduling groups')
+
+option('use_sstring', type: 'boolean', value: true,
+  description: 'Use Seastar\'s string implementation')
+
+option('task_backtrace', type: 'boolean', value: false,
+  description: 'Collect backtrace at deferring points.')
+
+option('api_level', type: 'integer', min: 2, value: 6,
+  description: 'Seastar API compatibility level')
