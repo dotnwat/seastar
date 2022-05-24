@@ -128,7 +128,8 @@ seastar = library('seastar',
   seastar_sources,
   dependencies: [boost, fmt, cryptopp, lz4, gnutls, cares, yaml, atomic_dep,
     sctp],
-  cpp_args: seastar_cpp_args + ['-Wno-non-virtual-dtor'],
+  cpp_args: seastar_cpp_args + ['-Wno-non-virtual-dtor',
+    '-Wno-bitwise-instead-of-logical', '-Wno-unused-but-set-variable'],
   implicit_include_directories : false,
   include_directories: [includes])
 
