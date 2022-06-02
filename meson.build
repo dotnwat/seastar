@@ -157,6 +157,7 @@ seastar_testing = library('seastar_testing',
 seastar_testing_dep = declare_dependency(
   link_with: seastar_testing,
   compile_args: seastar_cpp_args,
+  dependencies: [boost],
   include_directories: [includes])
 
 seastar_perf_testing = library('seastar_perf_testing',
