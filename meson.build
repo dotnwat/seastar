@@ -137,7 +137,7 @@ seastar = library('seastar',
 seastar_dep = declare_dependency(
   sources: http_parser_includes,
   link_with: seastar,
-  dependencies: [fmt, gnutls],
+  dependencies: [fmt, gnutls, lz4],
   compile_args: seastar_cpp_args,
   include_directories: [includes])
 
@@ -158,7 +158,7 @@ seastar_testing = library('seastar_testing',
 seastar_testing_dep = declare_dependency(
   link_with: seastar_testing,
   compile_args: seastar_cpp_args,
-  dependencies: [boost],
+  dependencies: [seastar_dep, boost],
   include_directories: [includes])
 
 seastar_perf_testing = library('seastar_perf_testing',
