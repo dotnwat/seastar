@@ -74,6 +74,7 @@ seastar_sources = files(
   'src/core/io_queue.cc',
   'src/core/semaphore.cc',
   'src/core/condition-variable.cc',
+  'src/core/program_options.cc',
   'src/http/api_docs.cc',
   'src/http/common.cc',
   'src/http/file_handler.cc',
@@ -83,7 +84,6 @@ seastar_sources = files(
   'src/http/mime_types.cc',
   'src/http/reply.cc',
   'src/http/routes.cc',
-  'src/http/short_streams.cc',
   'src/http/transformers.cc',
   'src/json/formatter.cc',
   'src/json/json_elements.cc',
@@ -120,6 +120,7 @@ seastar_sources = files(
   'src/util/program-options.cc',
   'src/util/read_first_line.cc',
   'src/util/tmp_file.cc',
+  'src/util/short_streams.cc',
   'src/websocket/server.cc')
 
 seastar_sources += http_parser_includes
@@ -163,6 +164,7 @@ seastar_testing_dep = declare_dependency(
 
 seastar_perf_testing = library('seastar_perf_testing',
   'src/testing/random.cc',
+  'tests/perf/linux_perf_event.cc',
   'tests/perf/perf_tests.cc',
   cpp_args: ['-Wno-non-virtual-dtor'],
   dependencies: [seastar_dep, boost, fmt])
