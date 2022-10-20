@@ -518,10 +518,10 @@ socket_address posix_server_socket_impl::local_address() const {
 
 future<accept_result> posix_ap_server_socket_impl::accept() {
     auto t_sa = std::make_tuple(_protocol, _sa);
-    auto conni = conn_q.find(t_sa);
-    if (conni != conn_q.end()) {
+    auto conni = conn_q.m.find(t_sa);
+    if (conni != conn_q.m.end()) {
         connection c = std::move(conni->second);
-        conn_q.erase(conni);
+        conn_q.m.erase(conni);
         try {
             std::unique_ptr<connected_socket_impl> csi(
                     new posix_connected_socket_impl(_sa.family(), _protocol, std::move(c.fd), std::move(c.connection_tracking_handle), _allocator));
@@ -543,7 +543,7 @@ future<accept_result> posix_ap_server_socket_impl::accept() {
 void
 posix_ap_server_socket_impl::abort_accept() {
     auto t_sa = std::make_tuple(_protocol, _sa);
-    conn_q.erase(t_sa);
+    conn_q.m.erase(t_sa);
     auto i = sockets.find(t_sa);
     if (i != sockets.end()) {
         i->second.set_exception(std::system_error(ECONNABORTED, std::system_category()));
@@ -585,7 +585,7 @@ posix_ap_server_socket_impl::move_connected_socket(int protocol, socket_address 
         }
         sockets.erase(i);
     } else {
-        conn_q.emplace(std::piecewise_construct, std::make_tuple(t_sa), std::make_tuple(std::move(fd), std::move(addr), std::move(cth)));
+        conn_q.m.emplace(std::piecewise_construct, std::make_tuple(t_sa), std::make_tuple(std::move(fd), std::move(addr), std::move(cth)));
     }
 }
 
