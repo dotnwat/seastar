@@ -150,9 +150,8 @@ seastar_testing_sources = files(
 
 seastar_testing = library('seastar_testing',
   seastar_testing_sources,
-  dependencies: [boost],
+  dependencies: [boost, seastar_dep],
   cpp_args: seastar_cpp_args + ['-Wno-non-virtual-dtor'],
-  link_with: [seastar],
   implicit_include_directories : false,
   include_directories: [includes])
 
