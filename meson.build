@@ -1,4 +1,4 @@
-project('seastar', 'cpp', default_options: ['cpp_std=c++2a'])
+project('seastar', 'cpp')
 
 # want src to be private
 includes = include_directories(['include', 'src'])
@@ -16,6 +16,10 @@ endif
 # public def (compile def)
 if get_option('task_backtrace')
   seastar_cpp_args += ['-DSEASTAR_TASK_BACKTRACE']
+endif
+
+if get_option('buildtype').startswith('debug')
+  seastar_cpp_args += ['-DSEASTAR_DEFAULT_ALLOCATOR']
 endif
 
 boost = dependency('boost',
