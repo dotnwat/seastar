@@ -505,6 +505,11 @@ seastar_generate_protobuf (
   IN_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/proto/metrics2.proto
   OUT_DIR ${Seastar_GEN_BINARY_DIR}/src/proto)
 
+set(FORTIFY_BUILD_TYPES "Release;RelWithDebInfo;Dev")
+if(CMAKE_BUILD_TYPE IN_LIST FORTIFY_BUILD_TYPES)
+  add_definitions(-D_FORTIFY_SOURCE=2)
+endif()
+
 add_library (seastar
   ${http_chunk_parsers_file}
   ${http_request_parser_file}
