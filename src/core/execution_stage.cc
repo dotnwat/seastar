@@ -89,8 +89,8 @@ bool execution_stage_manager::poll() const noexcept {
 }
 
 execution_stage_manager& execution_stage_manager::get() noexcept {
-    static thread_local execution_stage_manager instance;
-    return instance;
+    static thread_local dst::context_local<execution_stage_manager> instance;
+    return instance.get();
 }
 
 }

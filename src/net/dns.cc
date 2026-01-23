@@ -41,6 +41,7 @@
  *   * Uses ares_query_dnsrec for SRV records (if >= 1.28.0)
  */
 
+#include <array>
 #include <arpa/nameser.h>
 #include <chrono>
 #include <memory>
@@ -62,6 +63,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/print.hh>
+#include <seastar/core/context_local.hh>
 
 namespace seastar::net {
 
@@ -897,7 +899,7 @@ dns_resolver::impl::poll_sockets() {
         // future which cannot execute until the call returns.
         // I.e. we cannot get here while this call is running, so safe to make this
         // thread static
-        static thread_local ares_fd_events_t events[FD_SETSIZE];
+        static thread_local dst::context_local<std::array<ares_fd_events_t, FD_SETSIZE>> events;
 #endif
         int processed_fds = 0;
 
@@ -1571,8 +1573,8 @@ future<> dns_resolver::close() {
 }
 
 static dns_resolver& resolver() {
-    static thread_local dns_resolver resolver;
-    return resolver;
+    static thread_local dst::context_local<dns_resolver> resolver;
+    return resolver.get();
 }
 
 

@@ -107,8 +107,8 @@ scheduling_group_specific_thread_local_data** get_scheduling_group_specific_thre
 #else
 inline
 scheduling_group_specific_thread_local_data** get_scheduling_group_specific_thread_local_data_ptr() noexcept {
-    static thread_local scheduling_group_specific_thread_local_data* data;
-    return &data;
+    static thread_local dst::context_local_ptr<scheduling_group_specific_thread_local_data> data;
+    return &data.get();
 }
 #endif
 inline

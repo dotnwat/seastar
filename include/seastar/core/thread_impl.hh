@@ -54,12 +54,12 @@ public:
     void final_switch_out();
 };
 
-extern thread_local jmp_buf_link* g_current_context;
+extern thread_local dst::context_local_ptr<jmp_buf_link> g_current_context;
 
 namespace thread_impl {
 
 inline thread_context* get() {
-    return g_current_context->thread;
+    return g_current_context.get()->thread;
 }
 
 inline bool should_yield() {

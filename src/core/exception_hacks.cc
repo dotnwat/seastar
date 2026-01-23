@@ -62,6 +62,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/assert.hh>
+#include <seastar/core/context_local.hh>
 
 namespace seastar {
 using dl_iterate_fn = int (*) (int (*callback) (struct dl_phdr_info *info, size_t size, void *data), void *data);
@@ -125,7 +126,7 @@ void internal::increase_thrown_exceptions_counter() noexcept {
 seastar::logger exception_logger("exception");
 
 void log_exception_trace(seastar::log_level level) noexcept {
-    static thread_local bool nested = false;
+    static thread_local dst::context_local<bool> nested{false};
     if (!nested && exception_logger.is_enabled(level)) {
         nested = true;
         exception_logger.log(level, "Throw exception at:\n{}", current_backtrace());

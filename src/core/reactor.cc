@@ -523,8 +523,8 @@ namespace internal {
 #ifdef SEASTAR_BUILD_SHARED_LIBS
 const preemption_monitor*& get_need_preempt_var() {
     static preemption_monitor bootstrap_preemption_monitor;
-    static thread_local const preemption_monitor* g_need_preempt = &bootstrap_preemption_monitor;
-    return g_need_preempt;
+    static thread_local dst::context_local_ptr<const preemption_monitor> g_need_preempt{&bootstrap_preemption_monitor};
+    return g_need_preempt.get();
 }
 #endif
 
@@ -557,10 +557,10 @@ public:
     }
 };
 
-thread_local task_histogram this_thread_task_histogram;
+thread_local dst::context_local<task_histogram> this_thread_task_histogram;
 
 void task_histogram_add_task(const task& t) {
-    this_thread_task_histogram.add(t);
+    this_thread_task_histogram->add(t);
 }
 #else
 void task_histogram_add_task(const task& t) {
@@ -646,8 +646,8 @@ template class timer<lowres_clock>;
 template class timer<manual_clock>;
 
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-thread_local lowres_clock::time_point lowres_clock::_now;
-thread_local lowres_system_clock::time_point lowres_system_clock::_now;
+thread_local dst::context_local<lowres_clock::time_point> lowres_clock::_now;
+thread_local dst::context_local<lowres_system_clock::time_point> lowres_system_clock::_now;
 #endif
 
 reactor::signals::signals() : _pending_signals(0) {
@@ -2667,9 +2667,12 @@ bool reactor::task_queue::run_tasks() {
                 r.reset_preemption_monitor();
                 lowres_clock::update();
 
-                static thread_local logger::rate_limit rate_limit(std::chrono::seconds(10));
+                static thread_local dst::context_local<std::optional<logger::rate_limit>> rate_limit;
+                if (!rate_limit->has_value()) {
+                    rate_limit->emplace(std::chrono::seconds(10));
+                }
                 logger::lambda_log_writer writer([this] (auto it) { return do_dump_task_queue(it, *this); });
-                seastar_logger.log(log_level::warn, rate_limit, writer);
+                seastar_logger.log(log_level::warn, rate_limit->value(), writer);
                 if (r._cfg.abort_on_too_long_task_queue) {
                     auto msg = fmt::format("Too long task queue: {}, max_task_backlog={}", _q.size(), r._cfg.max_task_backlog);
                     on_fatal_internal_error(seastar_logger, msg);
@@ -2685,9 +2688,9 @@ namespace {
 
 #ifdef SEASTAR_SHUFFLE_TASK_QUEUE
 void shuffle(task*& t, circular_buffer<task*>& q) {
-    static thread_local std::mt19937 gen = std::mt19937(std::default_random_engine()());
+    static thread_local dst::context_local<std::mt19937> gen{std::mt19937(std::default_random_engine()())};
     std::uniform_int_distribution<size_t> tasks_dist{0, q.size() - 1};
-    auto& to_swap = q[tasks_dist(gen)];
+    auto& to_swap = q[tasks_dist(gen.get())];
     std::swap(to_swap, t);
 }
 #else
@@ -3965,17 +3968,17 @@ struct reactor_deleter {
     }
 };
 
-thread_local std::unique_ptr<reactor, reactor_deleter> reactor_holder;
+thread_local dst::context_local<std::unique_ptr<reactor, reactor_deleter>> reactor_holder;
 
-thread_local smp_message_queue** smp::_qs;
-thread_local std::thread::id smp::_tmain;
+thread_local dst::context_local<smp_message_queue**> smp::_qs;
+thread_local dst::context_local<std::thread::id> smp::_tmain;
 unsigned smp::count = 0;
 
 void smp::start_all_queues()
 {
     for (unsigned c = 0; c < count; c++) {
         if (c != this_shard_id()) {
-            _qs[c][this_shard_id()].start(c);
+            _qs.get()[c][this_shard_id()].start(c);
         }
     }
     _alien._qs[this_shard_id()].start();
@@ -4019,7 +4022,7 @@ void smp::arrive_at_event_loop_end() {
 }
 
 void smp::allocate_reactor(unsigned id, reactor_backend_selector rbs, reactor_config cfg) {
-    SEASTAR_ASSERT(!reactor_holder);
+    SEASTAR_ASSERT(!reactor_holder.get());
 
     // we cannot just write "local_engin = new reactor" since reactor's constructor
     // uses local_engine
@@ -4028,23 +4031,23 @@ void smp::allocate_reactor(unsigned id, reactor_backend_selector rbs, reactor_co
     SEASTAR_ASSERT(r == 0);
     *internal::this_shard_id_ptr() = id;
     local_engine = new (buf) reactor(this->shared_from_this(), _alien, id, std::move(rbs), cfg);
-    reactor_holder.reset(local_engine);
+    reactor_holder->reset(local_engine);
 }
 
 void smp::cleanup() noexcept {
     smp::_threads = std::vector<posix_thread>();
     _thread_loops.clear();
     _shard_to_numa_node_mapping = decltype(_shard_to_numa_node_mapping)();
-    reactor_holder.reset();
+    reactor_holder->reset();
     local_engine = nullptr;
 }
 
 void smp::cleanup_cpu() {
     size_t cpuid = this_shard_id();
 
-    if (_qs) {
+    if (_qs.get()) {
         for(unsigned i = 0; i < smp::count; i++) {
-            _qs[i][cpuid].stop();
+            _qs.get()[i][cpuid].stop();
         }
     }
     if (_alien._qs) {
@@ -4285,7 +4288,7 @@ void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_
 
     rc.overcommit = reactor_opts.overprovisioned;
 
-    smp::_tmain = std::this_thread::get_id();
+    smp::_tmain.get() = std::this_thread::get_id();
     resource::cpuset cpu_set = get_current_cpuset();
 
     if (smp_opts.cpuset) {
@@ -4567,13 +4570,13 @@ void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_
     };
 
     unsigned i;
-    auto smp_tmain = smp::_tmain;
+    auto smp_tmain = smp::_tmain.get();
     for (i = 1; i < smp::count; i++) {
         auto allocation = allocations[i];
         create_thread([this, smp_tmain, inited, &reactors_registered, &smp_queues_constructed, &smp_opts, &reactor_opts, &reactors, hugepages_path, i, allocation, assign_io_queues, alloc_io_queues, thread_affinity, heapprof_sampling_rate, mbind, backend_selector, reactor_cfg, &mtx, &layout, use_transparent_hugepages, allocate_qs_owner, allocate_smp_queues] {
           try {
             // initialize thread_locals that are equal across all reacto threads of this smp instance
-            smp::_tmain = smp_tmain;
+            smp::_tmain.get() = smp_tmain;
             auto thread_name = fmt::format("reactor-{}", i);
             pthread_setname_np(pthread_self(), thread_name.c_str());
             if (thread_affinity) {
@@ -4661,11 +4664,11 @@ bool smp::poll_queues() {
     size_t got = 0;
     for (unsigned i = 0; i < count; i++) {
         if (this_shard_id() != i) {
-            auto& rxq = _qs[this_shard_id()][i];
+            auto& rxq = _qs.get()[this_shard_id()][i];
             rxq.flush_response_batch();
             got += rxq.has_unflushed_responses();
             got += rxq.process_incoming();
-            auto& txq = _qs[i][this_shard_id()];
+            auto& txq = _qs.get()[i][this_shard_id()];
             txq.flush_request_batch();
             got += txq.process_completions(i);
         }
@@ -4676,9 +4679,9 @@ bool smp::poll_queues() {
 bool smp::pure_poll_queues() {
     for (unsigned i = 0; i < count; i++) {
         if (this_shard_id() != i) {
-            auto& rxq = _qs[this_shard_id()][i];
+            auto& rxq = _qs.get()[this_shard_id()][i];
             rxq.flush_response_batch();
-            auto& txq = _qs[i][this_shard_id()];
+            auto& txq = _qs.get()[i][this_shard_id()];
             txq.flush_request_batch();
             if (rxq.pure_poll_rx() || txq.pure_poll_tx() || rxq.has_unflushed_responses()) {
                 return true;
@@ -4688,7 +4691,7 @@ bool smp::pure_poll_queues() {
     return false;
 }
 
-__thread reactor* local_engine;
+__thread dst::context_local_ptr<reactor> local_engine;
 
 void report_exception(std::string_view message, std::exception_ptr eptr) noexcept {
     seastar_logger.error("{}: {}", message, eptr);
@@ -5039,8 +5042,8 @@ const smp& reactor::smp() const noexcept {
 namespace internal {
 
 scheduling_group_specific_thread_local_data** get_scheduling_group_specific_thread_local_data_ptr() noexcept {
-    static thread_local scheduling_group_specific_thread_local_data* data;
-    return &data;
+    static thread_local dst::context_local_ptr<scheduling_group_specific_thread_local_data> data;
+    return &data.get();
 }
 
 }
@@ -5055,8 +5058,8 @@ internal::no_such_scheduling_group(scheduling_group sg) {
 scheduling_group*
 internal::current_scheduling_group_ptr() noexcept {
     // Slow unless constructor is constexpr
-    static thread_local scheduling_group sg;
-    return &sg;
+    static thread_local dst::context_local<scheduling_group> sg;
+    return &sg.get();
 }
 #endif
 

@@ -69,7 +69,7 @@ void test_simple_execution_stage(Function&& func, Verify&& verify) {
     auto stage = seastar::make_execution_stage("test", std::forward<Function>(func));
 
     std::vector<int> vs;
-    std::default_random_engine& gen = testing::local_random_engine;
+    std::default_random_engine& gen = testing::local_random_engine.get();
     std::uniform_int_distribution<> dist(0, 100'000);
     std::generate_n(std::back_inserter(vs), 1'000, [&] { return dist(gen); });
 

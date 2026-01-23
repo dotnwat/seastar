@@ -576,7 +576,7 @@ SEASTAR_TEST_CASE(test_parallel_for_each_empty) {
 SEASTAR_TEST_CASE(test_parallel_for_each_exception) {
     std::array<int, 5> values = { 10, 2, 1, 4, 8 };
     int count = 0;
-    auto& eng = testing::local_random_engine;
+    auto& eng = testing::local_random_engine.get();
     auto dist = std::uniform_int_distribution<unsigned>();
     int throw_at = dist(eng) % values.size();
 

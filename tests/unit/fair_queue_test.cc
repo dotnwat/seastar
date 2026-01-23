@@ -523,7 +523,7 @@ SEASTAR_THREAD_TEST_CASE(test_fair_queue_longer_run_different_shares) {
 SEASTAR_THREAD_TEST_CASE(test_fair_queue_random_run) {
     test_env env;
 
-    std::default_random_engine& generator = testing::local_random_engine;
+    std::default_random_engine& generator = testing::local_random_engine.get();
     std::uniform_int_distribution<uint32_t> shares(1, 5);
     std::uniform_int_distribution<uint32_t> weights(1, 5);
 

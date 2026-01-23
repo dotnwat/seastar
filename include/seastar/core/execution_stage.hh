@@ -27,6 +27,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/util/reference_wrapper.hh>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/tuple_utils.hh>
@@ -188,6 +189,7 @@ class execution_stage_manager {
     std::vector<execution_stage*> _execution_stages;
     std::unordered_map<sstring, execution_stage*> _stages_by_name;
 private:
+    friend class dst::context_local<execution_stage_manager>;
     execution_stage_manager() = default;
     execution_stage_manager(const execution_stage_manager&) = delete;
     execution_stage_manager(execution_stage_manager&&) = delete;

@@ -23,6 +23,7 @@
 #include <seastar/core/app-template.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/thread.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/when_all.hh>
@@ -51,24 +52,24 @@ compute_intensive_task(Duration duration, unsigned& counter, Func func) {
 future<>
 heavy_task(unsigned& counter) {
     return compute_intensive_task(1ms, counter, [] {
-        static thread_local double x = 1;
-        x = std::exp(x) / 3;
+        static thread_local dst::context_local<double> x{1};
+        x.get() = std::exp(x.get()) / 3;
     });
 }
 
 future<>
 light_task(unsigned& counter) {
     return compute_intensive_task(100us, counter, [] {
-        static thread_local double x = 0.1;
-        x = std::log(x + 1);
+        static thread_local dst::context_local<double> x{0.1};
+        x.get() = std::log(x.get() + 1);
     });
 }
 
 future<>
 medium_task(unsigned& counter) {
     return compute_intensive_task(400us, counter, [] {
-        static thread_local double x = 0.1;
-        x = std::cos(x);
+        static thread_local dst::context_local<double> x{0.1};
+        x.get() = std::cos(x.get());
     });
 }
 

@@ -23,6 +23,7 @@
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/core/sharded.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
 #include <seastar/core/sleep.hh>
@@ -39,9 +40,9 @@ using namespace seastar;
 using namespace std::chrono_literals;
 
 struct async_service : public seastar::async_sharded_service<async_service> {
-    thread_local static bool deleted;
+    static thread_local dst::context_local<bool> deleted;
     ~async_service() {
-        deleted = true;
+        deleted.get() = true;
     }
     void run() {
         auto ref = shared_from_this();
@@ -51,12 +52,12 @@ struct async_service : public seastar::async_sharded_service<async_service> {
         });
     }
     virtual void check() {
-        SEASTAR_ASSERT(!deleted);
+        SEASTAR_ASSERT(!deleted.get());
     }
     future<> stop() { return make_ready_future<>(); }
 };
 
-thread_local bool async_service::deleted = false;
+thread_local dst::context_local<bool> async_service::deleted;
 
 struct X {
     sstring echo(sstring arg) {

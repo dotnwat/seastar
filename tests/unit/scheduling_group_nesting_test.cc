@@ -150,7 +150,7 @@ static future<> run_busyloops(std::vector<seastar::scheduling_group> groups, std
 }
 
 static future<> do_test_fairness(layout& l) {
-    std::default_random_engine random_engine(testing::local_random_engine());
+    std::default_random_engine random_engine(testing::local_random_engine.get()());
     std::uniform_int_distribution<unsigned> ng_dist(2, 5);
     std::uniform_int_distribution<unsigned> shares_dist(1, 5);
 
@@ -250,7 +250,7 @@ SEASTAR_TEST_CASE(test_fairness) {
 SEASTAR_TEST_CASE(test_wakeups) {
     auto l = co_await layout::create();
 
-    std::default_random_engine random_engine(testing::local_random_engine());
+    std::default_random_engine random_engine(testing::local_random_engine.get()());
     std::uniform_int_distribution<unsigned> ng_dist(0, l.groups.size() - 1);
     std::uniform_int_distribution<unsigned> w_dist(2, 8);
 

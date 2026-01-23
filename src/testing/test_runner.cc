@@ -82,7 +82,7 @@ bool test_runner::start_thread(int ac, char** av) {
                 std::cout << "random-seed=" << seed << std::endl;
                 return smp::invoke_on_all([seed] {
                     auto local_seed = seed + this_shard_id();
-                    local_random_engine.seed(local_seed);
+                    local_random_engine.get().seed(local_seed);
                 });
             };
 

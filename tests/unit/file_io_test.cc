@@ -957,7 +957,7 @@ SEASTAR_TEST_CASE(parallel_overwrite) {
                 f.dma_write(offset, buf.get(), buffer_size).get();
             }
 
-            auto random_engine = testing::local_random_engine;
+            auto random_engine = testing::local_random_engine.get();
             auto dist = std::uniform_int_distribution(uint64_t(0), sz-1);
             auto offsets  = std::vector<uint64_t>();
             std::generate_n(std::back_insert_iterator(offsets), 5000, [&] { return align_down(dist(random_engine), f.disk_overwrite_dma_alignment()); });
@@ -1183,7 +1183,7 @@ public:
 SEASTAR_THREAD_TEST_CASE(test_posix_file_dma_read_bulk) {
     static constexpr size_t data_size = 5 * test_posix_file_impl::block_size + 123;
     temporary_buffer<char> data(data_size);
-    auto random_engine = testing::local_random_engine;
+    auto random_engine = testing::local_random_engine.get();
     auto dist = std::uniform_int_distribution<char>();
     std::ranges::generate(data.get_write(), data.end(), [&] { return dist(random_engine); });
     auto f = std::make_unique<test_posix_file_impl>(data);

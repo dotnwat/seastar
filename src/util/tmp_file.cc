@@ -23,6 +23,7 @@
 #include <iostream>
 #include <random>
 
+#include <seastar/core/context_local.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/exceptions.hh>
@@ -52,10 +53,10 @@ generate_tmp_name(const fs::path& path_template) {
     }
     auto end = filename.size();
     static constexpr char charset[] = "0123456789abcdef";
-    static thread_local std::default_random_engine engine(std::random_device{}());
-    static thread_local std::uniform_int_distribution<int> dist(0, sizeof(charset) - 2);
+    static thread_local dst::context_local<std::default_random_engine> engine{std::default_random_engine(std::random_device{}())};
+    static thread_local dst::context_local<std::uniform_int_distribution<int>> dist{std::uniform_int_distribution<int>(0, sizeof(charset) - 2)};
     while (pos < end && filename[pos] == 'X') {
-        filename[pos++] = charset[dist(engine)];
+        filename[pos++] = charset[dist(engine.get())];
     }
     parent /= filename;
     return parent;

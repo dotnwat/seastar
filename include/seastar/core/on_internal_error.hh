@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/std-compat.hh>
 #include <exception>
@@ -69,7 +70,7 @@ void on_internal_error_noexcept(logger& logger, std::string_view reason) noexcep
 [[noreturn]] void on_fatal_internal_error(logger& logger, std::string_view reason) noexcept;
 
 namespace internal {
-extern thread_local uint64_t internal_errors;
+extern thread_local dst::context_local<uint64_t> internal_errors;
 }
 
 }

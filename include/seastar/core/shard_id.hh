@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
 
 /// \file
 
@@ -36,8 +37,8 @@ namespace internal {
 shard_id* this_shard_id_ptr() noexcept;
 #else
 inline shard_id* this_shard_id_ptr() noexcept {
-    static thread_local shard_id g_this_shard_id;
-    return &g_this_shard_id;
+    static thread_local dst::context_local<shard_id> g_this_shard_id;
+    return &g_this_shard_id.get();
 }
 #endif
 

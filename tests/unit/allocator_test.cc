@@ -120,7 +120,7 @@ void test_cpp17_aligned_allocator() {
     tv.push_back(std::make_unique<test17_concrete<4096*16>>());
     tv.push_back(std::make_unique<test17_concrete<4096*256>>());
 
-    std::default_random_engine random_engine(testing::local_random_engine());
+    std::default_random_engine random_engine(testing::local_random_engine.get()());
     std::uniform_int_distribution<> type_dist(0, 1);
     std::uniform_int_distribution<size_t> size_dist(0, tv.size() - 1);
     std::uniform_real_distribution<> which_dist(0, 1);

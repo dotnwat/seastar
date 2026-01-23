@@ -28,6 +28,7 @@
 #include <signal.h>
 
 #include "core/thread_pool.hh"
+#include <seastar/core/context_local.hh>
 #include <seastar/util/assert.hh>
 
 namespace seastar {

@@ -110,7 +110,7 @@ SEASTAR_THREAD_TEST_CASE(test_renaming_scheuling_groups) {
             // scheduling group name, do it 1000 in parallel on all shards so there
             // is a chance of collision.
             return do_for_each(rng, [sg, &dist] (auto i) {
-                bool odd = dist(seastar::testing::local_random_engine)%2;
+                bool odd = dist(seastar::testing::local_random_engine.get())%2;
                 return rename_scheduling_group(sg, odd ? name1 : name2);
             });
         });

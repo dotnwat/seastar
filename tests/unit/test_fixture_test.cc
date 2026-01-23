@@ -24,6 +24,7 @@
 
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/test_fixture.hh>
+#include <seastar/core/context_local.hh>
 
 using namespace seastar;
 using namespace seastar::testing;
@@ -74,54 +75,54 @@ SEASTAR_FIXTURE_THREAD_TEST_CASE(test_single_thread_test_fixture_void_ret, SyncT
     BOOST_REQUIRE(inited);
 }
 
-// having these thread local subtly verifies that the fixture 
+// having these thread local subtly verifies that the fixture
 // is run on the proper shard.
-static thread_local int num_shared_test_fixts_setup = 0;
-static thread_local int num_shared_test_fixts_teardown = 0;
-static thread_local std::string shared_test_fixts_string;
+static thread_local dst::context_local<int> num_shared_test_fixts_setup;
+static thread_local dst::context_local<int> num_shared_test_fixts_teardown;
+static thread_local dst::context_local<std::string> shared_test_fixts_string;
 
 struct SharedTestFixture { 
     SharedTestFixture()
     {}
     SharedTestFixture(const std::string& s)
     {
-        shared_test_fixts_string = s;
+        shared_test_fixts_string.get() = s;
     }
     future<> setup() {
-        ++num_shared_test_fixts_setup;
+        ++num_shared_test_fixts_setup.get();
         return make_ready_future<>();
     }
     future<> teardown() {
-        ++num_shared_test_fixts_teardown;
-        shared_test_fixts_string = {};
+        ++num_shared_test_fixts_teardown.get();
+        shared_test_fixts_string.get() = {};
         return make_ready_future<>();
     }
 };
 
-BOOST_AUTO_TEST_SUITE(shared_fixtures, 
+BOOST_AUTO_TEST_SUITE(shared_fixtures,
     *async_fixture<SharedTestFixture>()
     *async_fixture<SharedTestFixture>("los lobos")
     *async_fixture(
-        [] { ++num_shared_test_fixts_setup; return make_ready_future<>(); },
-        [] { ++num_shared_test_fixts_teardown; return make_ready_future<>(); }
+        [] { ++num_shared_test_fixts_setup.get(); return make_ready_future<>(); },
+        [] { ++num_shared_test_fixts_teardown.get(); return make_ready_future<>(); }
     )
 )
 
 SEASTAR_TEST_CASE(test_shared_fixture1) {
-    BOOST_REQUIRE(num_shared_test_fixts_setup == 3);
-    BOOST_REQUIRE(num_shared_test_fixts_teardown == 0);
+    BOOST_REQUIRE(num_shared_test_fixts_setup.get() == 3);
+    BOOST_REQUIRE(num_shared_test_fixts_teardown.get() == 0);
     return make_ready_future<>();
 }
 
 SEASTAR_TEST_CASE(test_shared_fixture2) {
-    BOOST_REQUIRE(num_shared_test_fixts_setup == 3);
-    BOOST_REQUIRE(num_shared_test_fixts_teardown == 0);
+    BOOST_REQUIRE(num_shared_test_fixts_setup.get() == 3);
+    BOOST_REQUIRE(num_shared_test_fixts_teardown.get() == 0);
     return make_ready_future<>();
 }
 
 SEASTAR_TEST_CASE(test_shared_fixture_init_value) {
-    BOOST_REQUIRE(shared_test_fixts_string != "");
-    BOOST_TEST_MESSAGE(shared_test_fixts_string);
+    BOOST_REQUIRE(shared_test_fixts_string.get() != "");
+    BOOST_TEST_MESSAGE(shared_test_fixts_string.get());
     return make_ready_future<>();
 }
 

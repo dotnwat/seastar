@@ -37,7 +37,7 @@ namespace memory {
 
 static logger log("failure_injector");
 
-thread_local alloc_failure_injector the_alloc_failure_injector;
+thread_local dst::context_local<alloc_failure_injector> the_alloc_failure_injector;
 
 void alloc_failure_injector::fail() {
     _failed = true;

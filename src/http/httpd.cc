@@ -53,6 +53,7 @@ module seastar;
 #include <seastar/util/short_streams.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/string_utils.hh>
+#include <seastar/core/context_local.hh>
 #endif
 
 
@@ -79,7 +80,7 @@ http_stats::http_stats(http_server& server, const sstring& name)
 }
 
 sstring http_server_control::generate_server_name() {
-    static thread_local uint16_t idgen;
+    static thread_local dst::context_local<uint16_t> idgen{0};
     return seastar::format("http-{}", idgen++);
 }
 

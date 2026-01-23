@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
 #include <seastar/core/resource.hh>
 #include <seastar/core/bitops.hh>
 #include <seastar/util/backtrace.hh>
@@ -170,17 +171,17 @@ void configure_minimal();
 
 namespace internal {
 
-extern thread_local constinit int abort_on_alloc_failure_suppressed;
+extern thread_local dst::context_local<int> abort_on_alloc_failure_suppressed;
 
 }
 
 class disable_abort_on_alloc_failure_temporarily {
 public:
     disable_abort_on_alloc_failure_temporarily() {
-        ++internal::abort_on_alloc_failure_suppressed;
+        ++internal::abort_on_alloc_failure_suppressed.get();
     }
     ~disable_abort_on_alloc_failure_temporarily() noexcept {
-        --internal::abort_on_alloc_failure_suppressed;
+        --internal::abort_on_alloc_failure_suppressed.get();
     }
 };
 

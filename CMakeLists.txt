@@ -69,6 +69,10 @@ option (Seastar_DEPRECATED_OSTREAM_FORMATTERS
   "Enable operator<< for formatting standard library containers, which will be deprecated in future"
   ON)
 
+option (Seastar_DST
+  "Enable deterministic simulation testing mode. Replaces thread-local storage with context-local arrays for single-threaded reactor multiplexing."
+  OFF)
+
 set (Seastar_API_LEVEL
   "9"
   CACHE
@@ -949,6 +953,11 @@ endif ()
 if (Seastar_DEBUG_ALLOCATIONS)
   target_compile_definitions (seastar
     PRIVATE SEASTAR_DEBUG_ALLOCATIONS)
+endif ()
+
+if (Seastar_DST)
+  target_compile_definitions (seastar
+    PUBLIC SEASTAR_DST)
 endif ()
 
 if (Sanitizers_FIBER_SUPPORT)

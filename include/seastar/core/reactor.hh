@@ -22,6 +22,7 @@
 #pragma once
 
 #include <seastar/core/aligned_buffer.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/cacheline.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/circular_buffer_fixed_capacity.hh>
@@ -786,7 +787,7 @@ public:
     };
 };
 
-extern __thread reactor* local_engine;
+extern __thread dst::context_local_ptr<reactor> local_engine;
 
 inline reactor& engine() {
     return *local_engine;

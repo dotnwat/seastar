@@ -866,7 +866,7 @@ struct client::metrics::domain {
     stats dead;
     seastar::metrics::metric_groups metric_groups;
 
-    static thread_local std::unordered_map<sstring, domain> all;
+    static thread_local dst::context_local<std::unordered_map<sstring, domain>> all;
     static domain& find_or_create(sstring name);
 
     stats::counter_type count_all(stats::counter_type stats::* field) noexcept {
@@ -918,10 +918,10 @@ struct client::metrics::domain {
     }
 };
 
-thread_local std::unordered_map<sstring, client::metrics::domain> client::metrics::domain::all;
+thread_local dst::context_local<std::unordered_map<sstring, client::metrics::domain>> client::metrics::domain::all;
 
 client::metrics::domain& client::metrics::domain::find_or_create(sstring name) {
-    auto i = all.try_emplace(name, name);
+    auto i = all->try_emplace(name, name);
     return i.first->second;
 }
 
@@ -1102,8 +1102,8 @@ server::connection::negotiate(feature_map requested) {
                 get_server()._conns.erase(get_connection_id());
                 f = f.then([this, c = shared_from_this()] () mutable {
                     return smp::submit_to(_parent_id.shard(), [this, c = make_foreign(static_pointer_cast<rpc::connection>(c))] () mutable {
-                        auto sit = _servers.find(*get_server()._options.streaming_domain);
-                        if (sit == _servers.end()) {
+                        auto sit = _servers.get().find(*get_server()._options.streaming_domain);
+                        if (sit == _servers.get().end()) {
                             throw std::logic_error(format("Shard {:d} does not have server with streaming domain {}", this_shard_id(), *get_server()._options.streaming_domain).c_str());
                         }
                         auto s = sit->second;
@@ -1285,8 +1285,8 @@ future<> server::connection::deregister_this_stream() {
         return make_ready_future<>();
     }
     return smp::submit_to(_parent_id.shard(), [this] () mutable {
-        auto sit = server::_servers.find(*get_server()._options.streaming_domain);
-        if (sit != server::_servers.end()) {
+        auto sit = server::_servers.get().find(*get_server()._options.streaming_domain);
+        if (sit != server::_servers.get().end()) {
             auto s = sit->second;
             auto it = s->_conns.find(_parent_id);
             if (it != s->_conns.end()) {
@@ -1306,7 +1306,7 @@ future<> server::connection::abort_all_streams() {
     });
 }
 
-thread_local std::unordered_map<streaming_domain_type, server*> server::_servers;
+thread_local dst::context_local<std::unordered_map<streaming_domain_type, server*>> server::_servers;
 
 server::server(protocol_base* proto, const socket_address& addr, resource_limits limits)
         : server(proto, seastar::listen(addr, listen_options{true}), limits, server_options{})
@@ -1320,10 +1320,10 @@ server::server(protocol_base* proto, server_socket ss, resource_limits limits, s
         : _proto(*proto), _ss(std::move(ss)), _limits(limits), _resources_available(limits.max_memory), _options(opts)
 {
     if (_options.streaming_domain) {
-        if (_servers.find(*_options.streaming_domain) != _servers.end()) {
+        if (_servers.get().find(*_options.streaming_domain) != _servers.get().end()) {
             throw std::runtime_error(format("An RPC server with the streaming domain {} is already exist", *_options.streaming_domain));
         }
-        _servers[*_options.streaming_domain] = this;
+        _servers.get()[*_options.streaming_domain] = this;
     }
     accept();
 }
@@ -1371,7 +1371,7 @@ future<> server::shutdown() {
     _ss.abort_accept();
     _resources_available.broken();
     if (_options.streaming_domain) {
-        _servers.erase(*_options.streaming_domain);
+        _servers.get().erase(*_options.streaming_domain);
     }
     return _ss_stopped.get_future().then([this] {
         return parallel_for_each(_conns | boost::adaptors::map_values, [] (shared_ptr<connection> conn) {

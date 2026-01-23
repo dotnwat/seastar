@@ -184,7 +184,7 @@ log_buf::~log_buf() {
 
 } // namespace internal
 
-thread_local uint64_t logging_failures = 0;
+thread_local dst::context_local<uint64_t> logging_failures;
 
 void validate(boost::any& v,
               const std::vector<std::string>& values,
@@ -259,21 +259,21 @@ static internal::log_buf::inserter_iterator print_real_timestamp(internal::log_b
         std::array<char, 32> static_buf; // big enough to hold '2023-01-14 15:06:33'
         internal::log_buf buf{static_buf.data(), static_buf.size()};
     };
-    static thread_local a_second this_second;
+    static thread_local dst::context_local<a_second> this_second;
     using clock = std::chrono::system_clock;
     auto n = clock::now();
     auto t = clock::to_time_t(n);
-    if (this_second.t != t) {
-        this_second.t = t;
-        this_second.buf.clear();
+    if (this_second->t != t) {
+        this_second->t = t;
+        this_second->buf.clear();
         std::tm tm_local;
         if (!localtime_r(&t, &tm_local)) {
             throw fmt::format_error("time_t value out of range");
         }
-        fmt::format_to(this_second.buf.back_insert_begin(), "{:%F %T}", tm_local);
+        fmt::format_to(this_second->buf.back_insert_begin(), "{:%F %T}", tm_local);
     }
     auto ms = (n - clock::from_time_t(t)) / 1ms;
-    return fmt::format_to(it, "{},{:03d}", this_second.buf.view(), ms);
+    return fmt::format_to(it, "{},{:03d}", this_second->buf.view(), ms);
 }
 
 static internal::log_buf::inserter_iterator (*print_timestamp)(internal::log_buf::inserter_iterator) = print_no_timestamp;
@@ -304,7 +304,7 @@ std::atomic<bool> logger::_ostream = { true };
 std::atomic<bool> logger::_syslog = { false };
 unsigned logger::_shard_field_width = 1;
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-thread_local bool logger::silent = false;
+thread_local dst::context_local<bool> logger::silent;
 #endif
 
 logger::logger(sstring name) : _name(std::move(name)) {
@@ -319,7 +319,7 @@ logger::~logger() {
     global_logger_registry().unregister_logger(this);
 }
 
-static thread_local std::array<char, 8192> static_log_buf;
+static thread_local dst::context_local<std::array<char, 8192>> static_log_buf;
 
 bool logger::rate_limit::check() {
     const auto now = clock::now();
@@ -355,7 +355,7 @@ logger::do_log(log_level level, log_writer& writer) {
     silencer be_silent;
 
     if (is_ostream_enabled) {
-        internal::log_buf buf(static_log_buf.data(), static_log_buf.size());
+        internal::log_buf buf(static_log_buf->data(), static_log_buf->size());
         auto it = buf.back_insert_begin();
         it = fmt::format_to(it, "{} ", wrapped_log_level{level});
         it = print_timestamp(it);
@@ -365,7 +365,7 @@ logger::do_log(log_level level, log_writer& writer) {
         _out->flush();
     }
     if (is_syslog_enabled) {
-        internal::log_buf buf(static_log_buf.data(), static_log_buf.size());
+        internal::log_buf buf(static_log_buf->data(), static_log_buf->size());
         auto it = buf.back_insert_begin();
         it = print_once(it);
         *it = '\0';

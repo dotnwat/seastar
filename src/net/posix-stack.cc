@@ -54,6 +54,7 @@ module seastar;
 #include <seastar/net/api.hh>
 #include <seastar/net/inet_address.hh>
 #include <seastar/util/std-compat.hh>
+#include <seastar/core/context_local.hh>
 #endif
 
 namespace std {
@@ -84,8 +85,8 @@ copy_reinterpret_cast(const void* ptr) {
     return tmp;
 }
 
-thread_local std::array<uint64_t, seastar::max_scheduling_groups()> bytes_sent = {};
-thread_local std::array<uint64_t, seastar::max_scheduling_groups()> bytes_received = {};
+thread_local seastar::dst::context_local<std::array<uint64_t, seastar::max_scheduling_groups()>> bytes_sent;
+thread_local seastar::dst::context_local<std::array<uint64_t, seastar::max_scheduling_groups()>> bytes_received;
 
 }
 
@@ -150,9 +151,9 @@ public:
     }
 };
 
-thread_local posix_ap_server_socket_impl::port_map_t posix_ap_server_socket_impl::ports{};
-thread_local posix_ap_server_socket_impl::sockets_map_t posix_ap_server_socket_impl::sockets{};
-thread_local posix_ap_server_socket_impl::conn_map_t posix_ap_server_socket_impl::conn_q{};
+thread_local dst::context_local<posix_ap_server_socket_impl::port_map_t> posix_ap_server_socket_impl::ports;
+thread_local dst::context_local<posix_ap_server_socket_impl::sockets_map_t> posix_ap_server_socket_impl::sockets;
+thread_local dst::context_local<posix_ap_server_socket_impl::conn_map_t> posix_ap_server_socket_impl::conn_q;
 
 class posix_tcp_connected_socket_operations : public posix_connected_socket_operations {
 public:
@@ -478,8 +479,8 @@ class posix_socket_impl final : public socket_impl {
     bool _reuseaddr = false;
 
     future<> find_port_and_connect(socket_address sa, socket_address local, transport proto = transport::TCP) {
-        static thread_local std::default_random_engine random_engine{std::random_device{}()};
-        static thread_local std::uniform_int_distribution<uint16_t> u(49152/smp::count + 1, 65535/smp::count - 1);
+        static thread_local dst::context_local<std::default_random_engine> random_engine{std::default_random_engine{std::random_device{}()}};
+        static thread_local dst::context_local<std::uniform_int_distribution<uint16_t>> u{std::uniform_int_distribution<uint16_t>(49152/smp::count + 1, 65535/smp::count - 1)};
         // If no explicit local address, set to dest address family wildcard.
         if (local.is_unspecified()) {
             local = net::inet_address(sa.addr().in_family());
@@ -488,7 +489,7 @@ class posix_socket_impl final : public socket_impl {
         return repeat([this, sa, local, proto, attempts = 0, requested_port = ntoh(local.as_posix_sockaddr_in().sin_port)] () mutable {
             _fd = engine().make_pollable_fd(sa, int(proto));
             _fd.get_file_desc().setsockopt(SOL_SOCKET, SO_REUSEADDR, int(_reuseaddr));
-            uint16_t port = attempts++ < 5 && requested_port == 0 && proto == transport::TCP ? u(random_engine) * smp::count + this_shard_id() : requested_port;
+            uint16_t port = attempts++ < 5 && requested_port == 0 && proto == transport::TCP ? u(random_engine.get()) * smp::count + this_shard_id() : requested_port;
             local.as_posix_sockaddr_in().sin_port = hton(port);
             return futurize_invoke([this, sa, local] { return internal::posix_connect(_fd, sa, local); }).then_wrapped([port, requested_port] (future<> f) {
                 try {
@@ -565,7 +566,7 @@ public:
 static
 unsigned
 get_port_or_counter(const socket_address& sa) {
-    static thread_local constinit unsigned counter = 0;
+    static thread_local dst::context_local<unsigned> counter{0};
     switch (sa.family()) {
     case AF_INET:
         return ntoh(sa.as_posix_sockaddr_in().sin_port);
@@ -761,22 +762,22 @@ socket_address posix_server_socket_impl::local_address() const {
 posix_ap_server_socket_impl::posix_ap_server_socket_impl(int protocol, socket_address sa, std::pmr::polymorphic_allocator<char>* allocator)
         : _protocol(protocol), _sa(sa), _allocator(allocator)
 {
-    auto it = ports.emplace(std::make_tuple(_protocol, _sa));
+    auto it = ports.get().emplace(std::make_tuple(_protocol, _sa));
     if (!it.second) {
         throw std::system_error(EADDRINUSE, std::system_category());
     }
 }
 
 posix_ap_server_socket_impl::~posix_ap_server_socket_impl() {
-    ports.erase(std::make_tuple(_protocol, _sa));
+    ports.get().erase(std::make_tuple(_protocol, _sa));
 }
 
 future<accept_result> posix_ap_server_socket_impl::accept() {
     auto t_sa = std::make_tuple(_protocol, _sa);
-    auto conni = conn_q.find(t_sa);
-    if (conni != conn_q.end()) {
+    auto conni = conn_q.get().find(t_sa);
+    if (conni != conn_q.get().end()) {
         connection c = std::move(conni->second);
-        conn_q.erase(conni);
+        conn_q.get().erase(conni);
         try {
             std::unique_ptr<connected_socket_impl> csi(
                     new posix_connected_socket_impl(_sa.family(), _protocol, std::move(c.fd), std::move(c.connection_tracking_handle), _allocator));
@@ -786,7 +787,7 @@ future<accept_result> posix_ap_server_socket_impl::accept() {
         }
     } else {
         try {
-            auto i = sockets.emplace(std::piecewise_construct, std::make_tuple(t_sa), std::make_tuple());
+            auto i = sockets.get().emplace(std::piecewise_construct, std::make_tuple(t_sa), std::make_tuple());
             SEASTAR_ASSERT(i.second);
             return i.first->second.get_future();
         } catch (...) {
@@ -798,11 +799,11 @@ future<accept_result> posix_ap_server_socket_impl::accept() {
 void
 posix_ap_server_socket_impl::abort_accept() {
     auto t_sa = std::make_tuple(_protocol, _sa);
-    conn_q.erase(t_sa);
-    auto i = sockets.find(t_sa);
-    if (i != sockets.end()) {
+    conn_q.get().erase(t_sa);
+    auto i = sockets.get().find(t_sa);
+    if (i != sockets.get().end()) {
         i->second.set_exception(std::system_error(ECONNABORTED, std::system_category()));
-        sockets.erase(i);
+        sockets.get().erase(i);
     }
 }
 
@@ -828,8 +829,8 @@ socket_address posix_reuseport_server_socket_impl::local_address() const {
 void
 posix_ap_server_socket_impl::move_connected_socket(int protocol, socket_address sa, pollable_fd fd, socket_address addr, conntrack::handle cth, std::optional<proxy_data> addr_data_opt, std::pmr::polymorphic_allocator<char>* allocator) {
     auto t_sa = std::make_tuple(protocol, sa);
-    auto i = sockets.find(t_sa);
-    if (i != sockets.end()) {
+    auto i = sockets.get().find(t_sa);
+    if (i != sockets.get().end()) {
         try {
             auto csi = make_maybe_proxied_connected_socket_impl(
                 sa.family(),
@@ -842,9 +843,9 @@ posix_ap_server_socket_impl::move_connected_socket(int protocol, socket_address 
         } catch (...) {
             i->second.set_exception(std::current_exception());
         }
-        sockets.erase(i);
+        sockets.get().erase(i);
     } else {
-        conn_q.emplace(std::piecewise_construct, std::make_tuple(t_sa), std::make_tuple(std::move(fd), std::move(addr), std::move(cth), std::move(addr_data_opt)));
+        conn_q.get().emplace(std::piecewise_construct, std::make_tuple(t_sa), std::make_tuple(std::move(fd), std::move(addr), std::move(cth), std::move(addr_data_opt)));
     }
 }
 
@@ -1410,16 +1411,17 @@ std::vector<network_interface> posix_network_stack::network_interfaces() {
 
     // And a similarly immutable set of shared_ptr to network_interface_impl per shard, ready
     // to be handed out to callers with minimal overhead
-    static const thread_local std::vector<shared_ptr<posix_network_interface_impl>> thread_local_interfaces = [] {
+    static thread_local dst::context_local<std::optional<std::vector<shared_ptr<posix_network_interface_impl>>>> thread_local_interfaces;
+    if (!thread_local_interfaces->has_value()) {
         std::vector<shared_ptr<posix_network_interface_impl>> res;
         res.reserve(global_interfaces.size());
         std::transform(global_interfaces.begin(), global_interfaces.end(), std::back_inserter(res), [](const posix_network_interface_impl& impl) {
             return make_shared<posix_network_interface_impl>(impl);
         });
-        return res;
-    }();
+        thread_local_interfaces->emplace(std::move(res));
+    }
 
-    return std::vector<network_interface>(thread_local_interfaces.begin(), thread_local_interfaces.end());
+    return std::vector<network_interface>(thread_local_interfaces->value().begin(), thread_local_interfaces->value().end());
 }
 
 statistics posix_network_stack::stats(unsigned scheduling_group_id) {

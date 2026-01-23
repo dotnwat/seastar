@@ -54,6 +54,7 @@ module seastar;
 #include <seastar/net/dhcp.hh>
 #include <seastar/net/config.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/context_local.hh>
 #endif
 
 namespace seastar {
@@ -155,7 +156,7 @@ void create_native_net_device(const native_stack_options& opts) {
 // native_network_stack
 class native_network_stack : public network_stack {
 public:
-    static thread_local promise<std::unique_ptr<network_stack>> ready_promise;
+    static thread_local dst::context_local<promise<std::unique_ptr<network_stack>>> ready_promise;
 private:
     interface _netif;
     ipv4 _inet;
@@ -183,7 +184,7 @@ public:
         if (this_shard_id() == 0) {
             create_native_net_device(*ns_opts);
         }
-        return ready_promise.get_future();
+        return ready_promise->get_future();
     }
     virtual bool has_per_core_namespace() override { return true; };
     void arp_learn(ethernet_address l2, ipv4_address l3) {
@@ -209,7 +210,7 @@ public:
     }
 };
 
-thread_local promise<std::unique_ptr<network_stack>> native_network_stack::ready_promise;
+thread_local dst::context_local<promise<std::unique_ptr<network_stack>>> native_network_stack::ready_promise;
 
 udp_channel
 native_network_stack::make_udp_channel(const socket_address& addr) {
@@ -335,7 +336,7 @@ void arp_learn(ethernet_address l2, ipv4_address l3)
 }
 
 void create_native_stack(const native_stack_options& opts, std::shared_ptr<device> dev) {
-    native_network_stack::ready_promise.set_value(std::unique_ptr<network_stack>(std::make_unique<native_network_stack>(opts, std::move(dev))));
+    native_network_stack::ready_promise->set_value(std::unique_ptr<network_stack>(std::make_unique<native_network_stack>(opts, std::move(dev))));
 }
 
 native_stack_options::native_stack_options()

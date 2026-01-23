@@ -24,6 +24,7 @@
 #include <limits>
 #include <cstdint>
 #include <functional>
+#include <seastar/core/context_local.hh>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/critical_alloc_section.hh>
 
@@ -91,13 +92,13 @@ public:
 };
 
 /// \cond internal
-extern thread_local alloc_failure_injector the_alloc_failure_injector;
+extern thread_local dst::context_local<alloc_failure_injector> the_alloc_failure_injector;
 /// \endcond
 
 /// \brief Return the shard-local \ref alloc_failure_injector instance.
 inline
 alloc_failure_injector& local_failure_injector() {
-    return the_alloc_failure_injector;
+    return the_alloc_failure_injector.get();
 }
 
 #ifdef SEASTAR_ENABLE_ALLOC_FAILURE_INJECTION

@@ -658,7 +658,7 @@ class protocol_base;
 
 class server {
 private:
-    static thread_local std::unordered_map<streaming_domain_type, server*> _servers;
+    static thread_local dst::context_local<std::unordered_map<streaming_domain_type, server*>> _servers;
 
 public:
     class connection : public rpc::connection, public enable_shared_from_this<connection> {

@@ -144,7 +144,7 @@ SEASTAR_THREAD_TEST_CASE(test_recursive_remove_directory) {
         }
     };
 
-    auto& eng = testing::local_random_engine;
+    auto& eng = testing::local_random_engine.get();
     auto dist = std::uniform_int_distribution<unsigned>();
     int levels = 1 + dist(eng) % 3;
     test_dir root = { nullptr, default_tmpdir().native() };
@@ -286,7 +286,7 @@ SEASTAR_TEST_CASE(test_read_entire_file_contiguous) {
     return tmp_file::do_with([] (tmp_file& tf) {
         return async([&tf] {
             file& f = tf.get_file();
-            auto& eng = testing::local_random_engine;
+            auto& eng = testing::local_random_engine.get();
             auto dist = std::uniform_int_distribution<unsigned>();
             size_t size = f.memory_dma_alignment() * (1 + dist(eng) % 1000);
             auto wbuf = temporary_buffer<char>::aligned(f.memory_dma_alignment(), size);

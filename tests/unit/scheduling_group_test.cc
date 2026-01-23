@@ -24,6 +24,7 @@
 #include <chrono>
 
 #include <seastar/core/thread.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/testing/test_runner.hh>
@@ -420,20 +421,20 @@ SEASTAR_THREAD_TEST_CASE(sg_create_with_destroy_tasks) {
 }
 
 SEASTAR_THREAD_TEST_CASE(sg_create_check_unique_constructor_invocation) {
-    static thread_local std::set<unsigned> groups;
+    static thread_local dst::context_local<std::set<unsigned>> groups;
 
     // check we don't run constructor in same sched group more than once.
     struct check {
         check() {
             auto sg = current_scheduling_group();
             auto id = internal::scheduling_group_index(sg);
-            BOOST_REQUIRE(groups.count(id) == 0);
-            groups.emplace(id);
+            BOOST_REQUIRE(groups->count(id) == 0);
+            groups->emplace(id);
         }
     };
 
     smp::invoke_on_all([] () {
-        groups.clear();
+        groups->clear();
     }).get();
 
     scheduling_group_key_config key1_conf = make_scheduling_group_key_config<check>();
@@ -441,6 +442,6 @@ SEASTAR_THREAD_TEST_CASE(sg_create_check_unique_constructor_invocation) {
 
     // clean out data for ASAN.
     smp::invoke_on_all([] () {
-        groups = {};
+        groups.get() = {};
     }).get();
 }

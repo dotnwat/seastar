@@ -20,13 +20,14 @@
  */
 
 #include <random>
+#include <seastar/testing/random.hh>
 #include <seastar/testing/test_runner.hh>
 
 namespace seastar {
 
 namespace testing {
 
-thread_local std::default_random_engine local_random_engine;
+thread_local dst::context_local<std::default_random_engine> local_random_engine;
 
 } // namespace testing
 

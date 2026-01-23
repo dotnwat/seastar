@@ -1082,7 +1082,7 @@ void test_compressor(std::function<std::unique_ptr<seastar::rpc::compressor>()> 
         inputs.emplace_back(std::move(func_returning_tuple));
     };
 
-    auto& eng = testing::local_random_engine;
+    auto& eng = testing::local_random_engine.get();
     auto dist = std::uniform_int_distribution<int>(0, std::numeric_limits<char>::max());
 
     auto snd = snd_buf(1);

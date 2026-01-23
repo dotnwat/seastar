@@ -21,6 +21,8 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
+
 namespace seastar {
 namespace memory {
 
@@ -29,16 +31,7 @@ namespace memory {
 /// \cond internal
 namespace internal {
 
-// This variable is used in hot paths so we want to avoid the compiler
-// generating TLS init guards for it. In C++20 we have constinit to tell the
-// compiler that it can be initialized compile time (although gcc still doesn't
-// completely drops the init guards - https://gcc.gnu.org/bugzilla/show_bug.cgi?id=97848).
-// In < c++20 we use `__thread` which results in no TLS init guards generated.
-#ifdef __cpp_constinit
-extern thread_local constinit volatile int critical_alloc_section;
-#else
-extern __thread volatile int critical_alloc_section;
-#endif
+extern thread_local dst::context_local<volatile int> critical_alloc_section;
 
 } // namespace internal
 /// \endcond
@@ -60,10 +53,10 @@ public:
         // we assume the critical_alloc_section is thread local
         // and there's seastar threads are non-preemptive.
         // Otherwise, this would require an atomic variable
-        internal::critical_alloc_section = internal::critical_alloc_section + 1;
+        internal::critical_alloc_section.get() = internal::critical_alloc_section.get() + 1;
     }
     ~scoped_critical_alloc_section() {
-        internal::critical_alloc_section = internal::critical_alloc_section - 1;
+        internal::critical_alloc_section.get() = internal::critical_alloc_section.get() - 1;
     }
 };
 
@@ -72,7 +65,7 @@ public:
 /// Will return true if there is at least one \ref scoped_critical_alloc_section
 /// alive in the current scope or the scope of any of the caller functions.
 inline bool is_critical_alloc_section() {
-    return bool(internal::critical_alloc_section);
+    return bool(internal::critical_alloc_section.get());
 }
 
 #else   // SEASTAR_ENABLE_ALLOC_FAILURE_INJECTION

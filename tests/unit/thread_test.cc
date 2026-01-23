@@ -22,6 +22,7 @@
 
 #include <seastar/core/thread.hh>
 #include <seastar/core/do_with.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/core/sstring.hh>
@@ -180,7 +181,7 @@ struct test_thread_custom_stack_size_failure : public seastar::testing::seastar_
 static test_thread_custom_stack_size_failure test_thread_custom_stack_size_failure_instance(
     "test_thread_custom_stack_size_failure",
     __FILE__, __LINE__);
-static thread_local volatile bool stack_guard_bypassed = false;
+static thread_local dst::context_local<volatile bool> stack_guard_bypassed;
 
 static int get_mprotect_flags(void* ctx) {
     int flags;
@@ -198,13 +199,13 @@ static void* pagealign(void* ptr, size_t page_size) {
     return reinterpret_cast<void*>(((reinterpret_cast<intptr_t>((ptr)) >> pageshift) << pageshift));
 }
 
-static thread_local struct sigaction default_old_sigsegv_handler;
+static thread_local dst::context_local<struct sigaction> default_old_sigsegv_handler;
 
 static void bypass_stack_guard(int sig, siginfo_t* si, void* ctx) {
     SEASTAR_ASSERT(sig == SIGSEGV);
     int flags = get_mprotect_flags(ctx);
-    stack_guard_bypassed = (flags & PROT_WRITE);
-    if (!stack_guard_bypassed) {
+    stack_guard_bypassed.get() = (flags & PROT_WRITE);
+    if (!stack_guard_bypassed.get()) {
         return;
     }
     size_t page_size = getpagesize();
@@ -226,7 +227,7 @@ seastar::future<> test_thread_custom_stack_size_failure::run_test_case() const {
     struct sigaction sa{};
     sa.sa_sigaction = &bypass_stack_guard;
     sa.sa_flags = SA_SIGINFO;
-    auto ret = sigaction(SIGSEGV, &sa, &default_old_sigsegv_handler);
+    auto ret = sigaction(SIGSEGV, &sa, &default_old_sigsegv_handler.get());
     if (ret) {
         throw std::system_error(ret, std::system_category());
     }
@@ -239,7 +240,7 @@ seastar::future<> test_thread_custom_stack_size_failure::run_test_case() const {
         volatile char* mem = reinterpret_cast<volatile char*>(&x);
         for (int i = 0; i < 20; ++i) {
             mem[i*-1024] = char(mem[i*-1024]);
-            if (stack_guard_bypassed) {
+            if (stack_guard_bypassed.get()) {
                 break;
             }
         }
@@ -249,8 +250,8 @@ seastar::future<> test_thread_custom_stack_size_failure::run_test_case() const {
     attr.stack_size = 16384;
     return async(attr, concat, x, y).then([] (sstring xy) {
         BOOST_REQUIRE_EQUAL(xy, "xy");
-        BOOST_REQUIRE(stack_guard_bypassed);
-        auto ret = sigaction(SIGSEGV, &default_old_sigsegv_handler, nullptr);
+        BOOST_REQUIRE(stack_guard_bypassed.get());
+        auto ret = sigaction(SIGSEGV, &default_old_sigsegv_handler.get(), nullptr);
         if (ret) {
             throw std::system_error(ret, std::system_category());
         }

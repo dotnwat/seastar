@@ -21,6 +21,7 @@
 
 #include <seastar/rpc/lz4_compressor.hh>
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/context_local.hh>
 #include <lz4.h>
 
 namespace seastar {
@@ -114,15 +115,15 @@ public:
     }
 };
 
-static thread_local reusable_buffer reusable_buffer_compressed_data;
-static thread_local reusable_buffer reusable_buffer_decompressed_data;
-static thread_local size_t buffer_use_count = 0;
+static thread_local dst::context_local<reusable_buffer> reusable_buffer_compressed_data;
+static thread_local dst::context_local<reusable_buffer> reusable_buffer_decompressed_data;
+static thread_local dst::context_local<size_t> buffer_use_count{0};
 static constexpr size_t drop_buffers_trigger = 100'000;
 
 static void after_buffer_use() noexcept {
     if (buffer_use_count++ == drop_buffers_trigger) {
-        reusable_buffer_compressed_data.clear();
-        reusable_buffer_decompressed_data.clear();
+        reusable_buffer_compressed_data->clear();
+        reusable_buffer_decompressed_data->clear();
         buffer_use_count = 0;
     }
 }
@@ -130,9 +131,9 @@ static void after_buffer_use() noexcept {
 snd_buf lz4_compressor::compress(size_t head_space, snd_buf data) {
     head_space += 4;
     auto dst_size = head_space + LZ4_compressBound(data.size);
-    auto dst = reusable_buffer_compressed_data.with_reserved<snd_buf>(dst_size, [&] (char* dst) {
+    auto dst = reusable_buffer_compressed_data->with_reserved<snd_buf>(dst_size, [&] (char* dst) {
         auto src_size = data.size;
-        auto src = reusable_buffer_decompressed_data.prepare(data.bufs, data.size);
+        auto src = reusable_buffer_decompressed_data->prepare(data.bufs, data.size);
 
         auto size = LZ4_compress_default(src, dst + head_space, src_size, LZ4_compressBound(src_size));
         if (size == 0) {
@@ -150,7 +151,7 @@ rcv_buf lz4_compressor::decompress(rcv_buf data) {
         return rcv_buf();
     } else {
         auto src_size = data.size;
-        auto src = reusable_buffer_decompressed_data.prepare(data.bufs, data.size);
+        auto src = reusable_buffer_decompressed_data->prepare(data.bufs, data.size);
 
         auto dst_size = read_le<uint32_t>(src);
         if (!dst_size) {
@@ -159,7 +160,7 @@ rcv_buf lz4_compressor::decompress(rcv_buf data) {
         src += sizeof(uint32_t);
         src_size -= sizeof(uint32_t);
 
-        auto dst = reusable_buffer_compressed_data.with_reserved<rcv_buf>(dst_size, [&] (char* dst) {
+        auto dst = reusable_buffer_compressed_data->with_reserved<rcv_buf>(dst_size, [&] (char* dst) {
             if (LZ4_decompress_safe(src, dst, src_size, dst_size) < 0) {
                 throw std::runtime_error("RPC frame LZ4 decompression failure");
             }

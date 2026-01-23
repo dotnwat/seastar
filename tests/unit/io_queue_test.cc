@@ -478,7 +478,7 @@ SEASTAR_TEST_CASE(test_request_iovec_split) {
         }
     };
 
-    std::default_random_engine& reng = testing::local_random_engine;
+    std::default_random_engine& reng = testing::local_random_engine.get();
     auto dice = std::uniform_int_distribution<uint16_t>(1, 31);
     auto stop = std::chrono::steady_clock::now() + std::chrono::seconds(4);
     uint64_t iter = 0;

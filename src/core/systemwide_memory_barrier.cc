@@ -33,6 +33,7 @@
 
 #include <seastar/core/internal/systemwide_memory_barrier.hh>
 #include <seastar/core/cacheline.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/assert.hh>
 
@@ -82,29 +83,30 @@ systemwide_memory_barrier() {
     }
 
     // FIXME: use sys_membarrier() when available
-    static thread_local char* mem = [] {
-       void* mem = mmap(nullptr, getpagesize(),
+    static thread_local dst::context_local<char*> mem;
+    if (!mem.get()) {
+       void* m = mmap(nullptr, getpagesize(),
                PROT_READ | PROT_WRITE,
                MAP_PRIVATE | MAP_ANONYMOUS,
-               -1, 0) ;
-       SEASTAR_ASSERT(mem != MAP_FAILED);
+               -1, 0);
+       SEASTAR_ASSERT(m != MAP_FAILED);
 
        // If the user specified --lock-memory, then madvise() below will fail
        // with EINVAL, so we unlock here:
-       auto r = munlock(mem, getpagesize());
+       auto r = munlock(m, getpagesize());
        // munlock may fail on old kernels if we don't have permission. That's not
        // a problem, since if we don't have permission to unlock, we didn't have
        // permissions to lock.
        SEASTAR_ASSERT(r == 0 || errno == EPERM);
 
-       return reinterpret_cast<char*>(mem);
-    }();
+       mem.get() = reinterpret_cast<char*>(m);
+    }
     // Force page into memory to make madvise() have real work to do
-    *mem = 3;
+    *mem.get() = 3;
     // Evict page to force kernel to send IPI to all threads, with
     // a side effect of executing a memory barrier on those threads
     // FIXME: does this work on ARM?
-    int r2 = madvise(mem, getpagesize(), MADV_DONTNEED);
+    int r2 = madvise(mem.get(), getpagesize(), MADV_DONTNEED);
     SEASTAR_ASSERT(r2 == 0);
 }
 

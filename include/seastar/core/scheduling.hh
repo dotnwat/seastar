@@ -25,6 +25,7 @@
 #include <concepts>
 #include <functional>
 #include <typeindex>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/function_traits.hh>
 
@@ -458,8 +459,8 @@ inline
 scheduling_group*
 current_scheduling_group_ptr() noexcept {
     // Slow unless constructor is constexpr
-    static thread_local scheduling_group sg;
-    return &sg;
+    static thread_local dst::context_local<scheduling_group> sg;
+    return &sg.get();
 }
 #endif
 }

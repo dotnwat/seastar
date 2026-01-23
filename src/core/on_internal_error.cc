@@ -26,6 +26,7 @@
 #include <string_view>
 #include <cstdlib>
 
+#include <seastar/core/context_local.hh>
 #include <seastar/core/on_internal_error.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
@@ -39,7 +40,7 @@ bool seastar::set_abort_on_internal_error(bool do_abort) noexcept {
 }
 
 namespace seastar::internal {
-thread_local uint64_t internal_errors = 0;
+thread_local dst::context_local<uint64_t> internal_errors;
 void increase_internal_errors_counter() noexcept {
     internal_errors++;
 }

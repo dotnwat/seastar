@@ -40,6 +40,7 @@ module seastar;
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/relabel_config.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/context_local.hh>
 #endif
 
 namespace seastar {
@@ -414,8 +415,8 @@ bool metric_id::operator==(
 // need to be available before the first users (reactor) will call it
 
 shared_ptr<impl>  get_local_impl() {
-    static thread_local auto the_impl = ::seastar::make_shared<impl>();
-    return the_impl;
+    static thread_local dst::context_local<shared_ptr<impl>> the_impl{::seastar::make_shared<impl>()};
+    return the_impl.get();
 }
 void impl::remove_registration(const metric_id& id) {
     auto i = get_value_map().find(id.full_name());

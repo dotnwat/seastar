@@ -44,8 +44,8 @@
 
 namespace seastar {
 
-thread_local jmp_buf_link g_unthreaded_context;
-thread_local jmp_buf_link* g_current_context;
+thread_local dst::context_local<jmp_buf_link> g_unthreaded_context;
+thread_local dst::context_local_ptr<jmp_buf_link> g_current_context;
 
 #ifdef SEASTAR_ASAN_ENABLED
 
@@ -69,13 +69,13 @@ static inline void __sanitizer_start_switch_fiber(...) { }
 static inline void __sanitizer_finish_switch_fiber(...) { }
 #endif
 
-thread_local jmp_buf_link* g_previous_context;
+thread_local dst::context_local_ptr<jmp_buf_link> g_previous_context;
 
 }
 
 void jmp_buf_link::initial_switch_in(ucontext_t* initial_context, const void* stack_bottom, size_t stack_size)
 {
-    auto prev = std::exchange(g_current_context, this);
+    auto prev = std::exchange(g_current_context.get(), this);
     link = prev;
     g_previous_context = prev;
     __sanitizer_start_switch_fiber(&prev->fake_stack, stack_bottom, stack_size);
@@ -86,7 +86,7 @@ void jmp_buf_link::initial_switch_in(ucontext_t* initial_context, const void* st
 
 void jmp_buf_link::switch_in()
 {
-    auto prev = std::exchange(g_current_context, this);
+    auto prev = std::exchange(g_current_context.get(), this);
     link = prev;
     g_previous_context = prev;
     __sanitizer_start_switch_fiber(&prev->fake_stack, stack_bottom, stack_size);
@@ -97,7 +97,7 @@ void jmp_buf_link::switch_in()
 
 void jmp_buf_link::switch_out()
 {
-    g_current_context = link;
+    g_current_context.get() = link;
     g_previous_context = this;
     __sanitizer_start_switch_fiber(&fake_stack, g_current_context->stack_bottom,
                                    g_current_context->stack_size);
@@ -115,7 +115,7 @@ void jmp_buf_link::initial_switch_in_completed()
 
 void jmp_buf_link::final_switch_out()
 {
-    g_current_context = link;
+    g_current_context.get() = link;
     g_previous_context = this;
     // Since the thread is about to die we pass nullptr as fake_stack_save argument
     // so that ASan knows it can destroy the fake stack if it exists.
@@ -127,7 +127,7 @@ void jmp_buf_link::final_switch_out()
 
 inline void jmp_buf_link::initial_switch_in(ucontext_t* initial_context, const void*, size_t)
 {
-    auto prev = std::exchange(g_current_context, this);
+    auto prev = std::exchange(g_current_context.get(), this);
     link = prev;
     if (setjmp(prev->jmpbuf) == 0) {
         setcontext(initial_context);
@@ -136,7 +136,7 @@ inline void jmp_buf_link::initial_switch_in(ucontext_t* initial_context, const v
 
 inline void jmp_buf_link::switch_in()
 {
-    auto prev = std::exchange(g_current_context, this);
+    auto prev = std::exchange(g_current_context.get(), this);
     link = prev;
     if (setjmp(prev->jmpbuf) == 0) {
         longjmp(jmpbuf, 1);
@@ -145,7 +145,7 @@ inline void jmp_buf_link::switch_in()
 
 inline void jmp_buf_link::switch_out()
 {
-    g_current_context = link;
+    g_current_context.get() = link;
     if (setjmp(jmpbuf) == 0) {
         longjmp(g_current_context->jmpbuf, 1);
     }
@@ -157,7 +157,7 @@ inline void jmp_buf_link::initial_switch_in_completed()
 
 inline void jmp_buf_link::final_switch_out()
 {
-    g_current_context = link;
+    g_current_context.get() = link;
     longjmp(g_current_context->jmpbuf, 1);
 }
 
@@ -184,7 +184,7 @@ thread_context::thread_context(thread_attributes attr, noncopyable_function<void
         , _stack(make_stack(get_stack_size(attr)))
         , _func(std::move(func)) {
     setup(get_stack_size(attr));
-    _all_threads.push_front(*this);
+    _all_threads.get().push_front(*this);
 }
 
 thread_context::~thread_context() {
@@ -192,7 +192,7 @@ thread_context::~thread_context() {
     auto mp_result = mprotect(_stack.get(), getpagesize(), PROT_READ | PROT_WRITE);
     SEASTAR_ASSERT(mp_result == 0);
 #endif
-    _all_threads.erase(_all_threads.iterator_to(*this));
+    _all_threads.get().erase(_all_threads.get().iterator_to(*this));
 }
 
 thread_context::stack_deleter::stack_deleter(int valgrind_id) : valgrind_id(valgrind_id) {}
@@ -263,7 +263,7 @@ thread_context::should_yield() const {
     return need_preempt();
 }
 
-thread_local thread_context::all_thread_list thread_context::_all_threads;
+thread_local dst::context_local<thread_context::all_thread_list> thread_context::_all_threads;
 
 void
 thread_context::run_and_dispose() noexcept {
@@ -332,9 +332,9 @@ void switch_out(thread_context* from) {
 }
 
 void init() {
-    g_unthreaded_context.link = nullptr;
-    g_unthreaded_context.thread = nullptr;
-    g_current_context = &g_unthreaded_context;
+    g_unthreaded_context.get().link = nullptr;
+    g_unthreaded_context.get().thread = nullptr;
+    g_current_context.get() = &g_unthreaded_context.get();
 }
 
 }

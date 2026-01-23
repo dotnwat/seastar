@@ -48,9 +48,9 @@ using seastar::metrics::impl::labels_type;
 
 void scollectd::type_instance_id::truncate(sstring& field, const char* field_desc) {
     if (field.size() > max_collectd_field_text_len) {
-        auto suffix_len = std::ceil(std::log10(++_next_truncated_idx)) + 1;
+        auto suffix_len = std::ceil(std::log10(++_next_truncated_idx.get())) + 1;
         sstring new_field(seastar::format(
-            "{}~{:d}", sstring(field.data(), max_collectd_field_text_len - suffix_len), _next_truncated_idx));
+            "{}~{:d}", sstring(field.data(), max_collectd_field_text_len - suffix_len), _next_truncated_idx.get()));
 
         logger.warn("Truncating \"{}\" to {} chars: \"{}\" -> \"{}\"", field_desc, max_collectd_field_text_len, field,
             new_field);
@@ -78,7 +78,7 @@ bool scollectd::type_instance_id::operator==(
 namespace scollectd {
 
 ::seastar::logger logger("scollectd");
-thread_local unsigned type_instance_id::_next_truncated_idx = 0;
+thread_local dst::context_local<unsigned> type_instance_id::_next_truncated_idx;
 
 registration::~registration() {
     unregister();
@@ -990,10 +990,10 @@ metrics::impl::value_map get_value_map() {
 
 }
 
-thread_local scollectd::impl scollectd_impl;
+thread_local dst::context_local<scollectd::impl> scollectd_impl;
 
 scollectd::impl & scollectd::get_impl() {
-    return scollectd_impl;
+    return scollectd_impl.get();
 }
 
 }

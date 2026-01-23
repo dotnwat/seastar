@@ -33,6 +33,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/io_intent.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/later.hh>
 #include <chrono>
@@ -69,7 +70,7 @@ using namespace boost::accumulators;
 static constexpr uint64_t extent_size_hint_alignment{1u << 20}; // 1MB
 
 static auto random_seed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-static thread_local std::default_random_engine random_generator(random_seed);
+static thread_local dst::context_local<std::default_random_engine> random_generator{std::default_random_engine(random_seed)};
 
 class context;
 enum class request_type { seqread, overwrite, randread, randwrite, append, cpu, unlink };
@@ -90,7 +91,7 @@ auto allocate_and_fill_buffer(size_t buffer_size) {
     auto buffer = allocate_aligned_buffer<char>(buffer_size, alignment);
 
     std::uniform_int_distribution<int> fill('@', '~');
-    memset(buffer.get(), fill(random_generator), buffer_size);
+    memset(buffer.get(), fill(random_generator.get()), buffer_size);
 
     return buffer;
 }
@@ -558,7 +559,7 @@ protected:
     uint64_t get_pos() {
         uint64_t pos;
         if (is_random()) {
-            pos = _pos_distribution(random_generator) * req_size();
+            pos = _pos_distribution(random_generator.get()) * req_size();
         } else {
             pos = _next_seq_pos;
             _next_seq_pos += req_size();

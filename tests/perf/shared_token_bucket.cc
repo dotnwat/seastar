@@ -175,7 +175,7 @@ struct worker : public seastar::peering_sharded_service<worker<TokenBucket>> {
                         sz = head->first;
                         head.reset();
                     } else {
-                        sz = size(testing::local_random_engine);
+                        sz = size(testing::local_random_engine.get());
                         auto h = tb.grab(sz);
                         d = tb.deficiency(h);
                         if (d > 0) {
@@ -272,10 +272,10 @@ struct hog {
         keep_going = true;
         stopped = do_until([this] { return !keep_going; },
             [this] {
-                auto p = std::chrono::duration<double>(rest(testing::local_random_engine));
+                auto p = std::chrono::duration<double>(rest(testing::local_random_engine.get()));
                 return seastar::sleep(std::chrono::duration_cast<std::chrono::microseconds>(p)).then([this] {
                     _iterations++;
-                    auto until = clock_type::now() + std::chrono::duration<double>(busy(testing::local_random_engine));
+                    auto until = clock_type::now() + std::chrono::duration<double>(busy(testing::local_random_engine.get()));
                     do {
                     } while (clock_type::now() < until && keep_going);
                 });

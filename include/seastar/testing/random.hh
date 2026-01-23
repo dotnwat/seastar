@@ -21,13 +21,14 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
 #include <random>
 
 namespace seastar {
 
 namespace testing {
 
-extern thread_local std::default_random_engine local_random_engine;
+extern thread_local dst::context_local<std::default_random_engine> local_random_engine;
 
 } // namespace testing
 

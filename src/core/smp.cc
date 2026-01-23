@@ -42,6 +42,7 @@ module seastar;
 #include <seastar/core/on_internal_error.hh>
 #include <seastar/core/posix.hh>
 #include <seastar/core/align.hh>
+#include <seastar/core/context_local.hh>
 #include "prefault.hh"
 #endif
 
@@ -51,8 +52,8 @@ extern logger seastar_logger;
 
 #ifdef SEASTAR_BUILD_SHARED_LIBS
 shard_id* internal::this_shard_id_ptr() noexcept {
-    static thread_local shard_id g_this_shard_id;
-    return &g_this_shard_id;
+    static thread_local dst::context_local<shard_id> g_this_shard_id;
+    return &g_this_shard_id.get();
 }
 #endif
 
@@ -67,8 +68,15 @@ struct smp_service_group_impl {
 #endif
 };
 
-static thread_local smp_service_group_semaphore smp_service_group_management_sem{1, named_semaphore_exception_factory{"smp_service_group_management_sem"}};
-static thread_local std::vector<smp_service_group_impl> smp_service_groups;
+static thread_local dst::context_local<std::optional<smp_service_group_semaphore>> smp_service_group_management_sem;
+
+static smp_service_group_semaphore& get_smp_service_group_management_sem() {
+    if (!smp_service_group_management_sem->has_value()) {
+        smp_service_group_management_sem->emplace(1, named_semaphore_exception_factory{"smp_service_group_management_sem"});
+    }
+    return smp_service_group_management_sem->value();
+}
+static thread_local dst::context_local<std::vector<smp_service_group_impl>> smp_service_groups;
 
 static named_semaphore_exception_factory make_service_group_semaphore_exception_factory(unsigned id, shard_id client_cpu, shard_id this_cpu, std::optional<sstring> smp_group_name) {
     if (smp_group_name) {
@@ -89,25 +97,25 @@ static_assert(std::is_nothrow_move_constructible_v<smp_submit_to_options>);
 future<smp_service_group> create_smp_service_group(smp_service_group_config ssgc) noexcept {
     ssgc.max_nonlocal_requests = std::max(ssgc.max_nonlocal_requests, smp::count - 1);
     return smp::submit_to(0, [ssgc] {
-        return with_semaphore(smp_service_group_management_sem, 1, [ssgc] {
-            auto it = boost::range::find_if(smp_service_groups, [&] (smp_service_group_impl& ssgi) { return ssgi.clients.empty(); });
-            size_t id = it - smp_service_groups.begin();
+        return with_semaphore(get_smp_service_group_management_sem(), 1, [ssgc] {
+            auto it = boost::range::find_if(smp_service_groups.get(), [&] (smp_service_group_impl& ssgi) { return ssgi.clients.empty(); });
+            size_t id = it - smp_service_groups->begin();
             return parallel_for_each(smp::all_cpus(), [ssgc, id] (unsigned cpu) {
               return smp::submit_to(cpu, [ssgc, id, cpu] {
-                if (id >= smp_service_groups.size()) {
-                    smp_service_groups.resize(id + 1); // may throw
+                if (id >= smp_service_groups->size()) {
+                    smp_service_groups->resize(id + 1); // may throw
                 }
-                smp_service_groups[id].clients.reserve(smp::count); // may throw
+                smp_service_groups.get()[id].clients.reserve(smp::count); // may throw
                 auto per_client = smp::count > 1 ? ssgc.max_nonlocal_requests / (smp::count - 1) : 0u;
                 for (unsigned i = 0; i != smp::count; ++i) {
-                    smp_service_groups[id].clients.emplace_back(per_client, make_service_group_semaphore_exception_factory(id, i, cpu, ssgc.group_name));
+                    smp_service_groups.get()[id].clients.emplace_back(per_client, make_service_group_semaphore_exception_factory(id, i, cpu, ssgc.group_name));
                 }
               });
             }).handle_exception([id] (std::exception_ptr e) {
                 // rollback
                 return smp::invoke_on_all([id] {
-                    if (smp_service_groups.size() > id) {
-                        smp_service_groups[id].clients.clear();
+                    if (smp_service_groups->size() > id) {
+                        smp_service_groups.get()[id].clients.clear();
                     }
                 }).then([e = std::move(e)] () mutable {
                     std::rethrow_exception(std::move(e));
@@ -115,7 +123,7 @@ future<smp_service_group> create_smp_service_group(smp_service_group_config ssgc
             }).then([id] {
                 auto ret = smp_service_group(id);
 #ifdef SEASTAR_DEBUG
-                ret._version = smp_service_groups[id].version;
+                ret._version = smp_service_groups.get()[id].version;
 #endif
                 return ret;
             });
@@ -125,20 +133,20 @@ future<smp_service_group> create_smp_service_group(smp_service_group_config ssgc
 
 future<> destroy_smp_service_group(smp_service_group ssg) noexcept {
     return smp::submit_to(0, [ssg] {
-        return with_semaphore(smp_service_group_management_sem, 1, [ssg] {
+        return with_semaphore(get_smp_service_group_management_sem(), 1, [ssg] {
             auto id = internal::smp_service_group_id(ssg);
-            if (id >= smp_service_groups.size()) {
+            if (id >= smp_service_groups->size()) {
                 on_fatal_internal_error(seastar_logger, format("destroy_smp_service_group id={}: out of range", id));
             }
 #ifdef SEASTAR_DEBUG
-            if (ssg._version != smp_service_groups[id].version) {
-                on_fatal_internal_error(seastar_logger, format("destroy_smp_service_group id={}: stale version={}: current_version={}", id, ssg._version, smp_service_groups[id].version));
+            if (ssg._version != smp_service_groups.get()[id].version) {
+                on_fatal_internal_error(seastar_logger, format("destroy_smp_service_group id={}: stale version={}: current_version={}", id, ssg._version, smp_service_groups.get()[id].version));
             }
 #endif
             return smp::invoke_on_all([id] {
-                smp_service_groups[id].clients.clear();
+                smp_service_groups.get()[id].clients.clear();
 #ifdef SEASTAR_DEBUG
-                ++smp_service_groups[id].version;
+                ++smp_service_groups.get()[id].version;
 #endif
             });
         });
@@ -152,9 +160,9 @@ void init_default_smp_service_group(shard_id cpu) {
     // This would be fine, we just create extra junk here, _but_ it is quite possible
     // that we actually run with different cpu count (see smp_options::smp), in which case
     // the `get_smp_service_groups_semaphore` below can cause us to return uninitialized memory.
-    smp_service_groups.clear();
-    smp_service_groups.emplace_back();
-    auto& ssg0 = smp_service_groups.back();
+    smp_service_groups->clear();
+    smp_service_groups->emplace_back();
+    auto& ssg0 = smp_service_groups->back();
     ssg0.clients.reserve(smp::count);
     for (unsigned i = 0; i != smp::count; ++i) {
         ssg0.clients.emplace_back(smp_service_group_semaphore::max_counter(), make_service_group_semaphore_exception_factory(0, i, cpu, {"default"}));
@@ -162,7 +170,7 @@ void init_default_smp_service_group(shard_id cpu) {
 }
 
 smp_service_group_semaphore& get_smp_service_groups_semaphore(unsigned ssg_id, shard_id t) noexcept {
-    return smp_service_groups[ssg_id].clients[t];
+    return smp_service_groups.get()[ssg_id].clients[t];
 }
 
 smp::smp(alien::instance& alien)

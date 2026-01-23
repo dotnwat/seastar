@@ -39,6 +39,7 @@
 #include <seastar/core/bitops.hh>
 #include <seastar/core/slab.hh>
 #include <seastar/core/align.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/print.hh>
 #include <seastar/net/api.hh>
 #include <seastar/util/memory-data-source.hh>
@@ -67,8 +68,8 @@ namespace bi = boost::intrusive;
 static constexpr double default_slab_growth_factor = 1.25;
 static constexpr uint64_t default_slab_page_size = 1UL*MB;
 static constexpr uint64_t default_per_cpu_slab_size = 0UL; // zero means reclaimer is enabled.
-static __thread slab_allocator<item>* slab;
-static thread_local std::unique_ptr<slab_allocator<item>> slab_holder;
+static thread_local dst::context_local<slab_allocator<item>*> slab;
+static thread_local dst::context_local<std::unique_ptr<slab_allocator<item>>> slab_holder;
 
 template<typename T>
 using optional = std::optional<T>;
@@ -262,16 +263,16 @@ public:
         SEASTAR_ASSERT(it->_ref_count >= 0);
         ++it->_ref_count;
         if (it->_ref_count == 2) {
-            slab->lock_item(it);
+            slab.get()->lock_item(it);
         }
     }
 
     friend inline void intrusive_ptr_release(item* it) {
         --it->_ref_count;
         if (it->_ref_count == 1) {
-            slab->unlock_item(it);
+            slab.get()->unlock_item(it);
         } else if (it->_ref_count == 0) {
-            slab->free(it);
+            slab.get()->free(it);
         }
         SEASTAR_ASSERT(it->_ref_count >= 0);
     }
@@ -468,7 +469,7 @@ private:
         erase(old_item);
 
         size_t size = item_size(insertion);
-        auto new_item = slab->create(size, Origin::move_if_local(insertion.key), Origin::move_if_local(insertion.ascii_prefix),
+        auto new_item = slab.get()->create(size, Origin::move_if_local(insertion.key), Origin::move_if_local(insertion.ascii_prefix),
             Origin::move_if_local(insertion.data), insertion.expiry, old_item_version + 1);
         intrusive_ptr_add_ref(new_item);
 
@@ -485,7 +486,7 @@ private:
     inline
     void add_new(item_insertion_data& insertion) {
         size_t size = item_size(insertion);
-        auto new_item = slab->create(size, Origin::move_if_local(insertion.key), Origin::move_if_local(insertion.ascii_prefix),
+        auto new_item = slab.get()->create(size, Origin::move_if_local(insertion.key), Origin::move_if_local(insertion.ascii_prefix),
             Origin::move_if_local(insertion.data), insertion.expiry);
         intrusive_ptr_add_ref(new_item);
         auto& item_ref = *new_item;
@@ -525,14 +526,14 @@ public:
         _flush_timer.set_callback([this] { flush_all(); });
 
         // initialize per-thread slab allocator.
-        slab_holder = std::make_unique<slab_allocator<item>>(default_slab_growth_factor, per_cpu_slab_size, slab_page_size,
+        slab_holder.get() = std::make_unique<slab_allocator<item>>(default_slab_growth_factor, per_cpu_slab_size, slab_page_size,
                 [this](item& item_ref) { erase<true, true, false>(item_ref); _stats._evicted++; });
-        slab = slab_holder.get();
+        slab.get() = slab_holder->get();
 #ifdef __DEBUG__
         static bool print_slab_classes = true;
         if (print_slab_classes) {
             print_slab_classes = false;
-            slab->print_slab_classes();
+            slab.get()->print_slab_classes();
         }
 #endif
     }

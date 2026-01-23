@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
 #include <seastar/net/packet.hh>
 #include <map>
 
@@ -32,8 +33,8 @@ template <typename Offset, typename Tag>
 class packet_merger {
 private:
     static uint64_t& linearizations_ref() {
-        static thread_local uint64_t linearization_count;
-        return linearization_count;
+        static thread_local dst::context_local<uint64_t> linearization_count;
+        return linearization_count.get();
     }
 public:
     std::map<Offset, packet> map;

@@ -20,6 +20,7 @@
 #include <cstddef>
 #include <seastar/core/internal/estimated_histogram.hh>
 #include <seastar/core/iostream.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/metrics_registration.hh>
@@ -45,7 +46,7 @@ namespace mi = sm::impl;
 
 using labels_list_type = std::vector<std::string>;
 
-thread_local auto impl_ = sm::impl::get_local_impl();
+thread_local dst::context_local<decltype(sm::impl::get_local_impl())> impl_{sm::impl::get_local_impl()};
 
 namespace {
 [[maybe_unused]] void remove_existing_metrics() {

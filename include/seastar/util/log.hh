@@ -20,6 +20,7 @@
  */
 #pragma once
 
+#include <seastar/core/context_local.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log-impl.hh>
@@ -65,9 +66,9 @@ class logger {
     static std::atomic<bool> _syslog;
     static unsigned _shard_field_width;
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-    static thread_local bool silent;
+    static thread_local dst::context_local<bool> silent;
 #else
-    static inline thread_local bool silent = false;
+    static inline thread_local dst::context_local<bool> silent;
 #endif
 
 public:
@@ -524,7 +525,7 @@ void apply_logging_settings(const logging_settings&);
 
 /// \cond internal
 
-extern thread_local uint64_t logging_failures;
+extern thread_local dst::context_local<uint64_t> logging_failures;
 
 sstring pretty_type_name(const std::type_info&);
 

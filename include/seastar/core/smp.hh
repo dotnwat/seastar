@@ -21,6 +21,7 @@
 
 #pragma once
 
+#include <seastar/core/context_local.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/loop.hh>
 #include <seastar/core/semaphore.hh>
@@ -312,8 +313,8 @@ class smp : public std::enable_shared_from_this<smp> {
       void operator()(smp_message_queue** qs) const;
     };
     std::unique_ptr<smp_message_queue*[], qs_deleter> _qs_owner;
-    static thread_local smp_message_queue**_qs;
-    static thread_local std::thread::id _tmain;
+    static thread_local dst::context_local<smp_message_queue**> _qs;
+    static thread_local dst::context_local<std::thread::id> _tmain;
     bool _using_dpdk = false;
     std::vector<unsigned> _shard_to_numa_node_mapping;
 
@@ -327,7 +328,7 @@ public:
     void cleanup_cpu();
     void arrive_at_event_loop_end();
     void join_all();
-    static bool main_thread() { return std::this_thread::get_id() == _tmain; }
+    static bool main_thread() { return std::this_thread::get_id() == _tmain.get(); }
 
     /// \returns A integer span of size smp::count, with nth integer being the ID of nth shard's NUMA node.
     std::span<const unsigned> shard_to_numa_node_mapping() const noexcept;
@@ -367,7 +368,7 @@ public:
                 return futurize<std::invoke_result_t<Func>>::make_exception_future(std::current_exception());
             }
         } else {
-            return _qs[t][this_shard_id()].submit(t, options, std::forward<Func>(func));
+            return _qs.get()[t][this_shard_id()].submit(t, options, std::forward<Func>(func));
         }
     }
     /// Runs a function on a remote core.

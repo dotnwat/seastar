@@ -79,7 +79,7 @@ public:
         : _small_buffer_random(seastar::temporary_buffer<char>(small_buffer_size))
         , _small_buffer_zeroes(seastar::temporary_buffer<char>(small_buffer_size))
     {
-        auto& eng = testing::local_random_engine;
+        auto& eng = testing::local_random_engine.get();
         auto dist = std::uniform_int_distribution<int>(0, std::numeric_limits<char>::max());
 
         std::generate_n(_small_buffer_random.get_write(), small_buffer_size, [&] { return dist(eng); });

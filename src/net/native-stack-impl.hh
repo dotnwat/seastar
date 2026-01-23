@@ -23,6 +23,7 @@
 
 #include <seastar/net/stack.hh>
 #include <seastar/net/inet_address.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/log.hh>
 
@@ -34,8 +35,8 @@ namespace internal {
 
 namespace native_stack_net_stats {
 
-inline thread_local std::array<uint64_t, max_scheduling_groups()> bytes_sent = {};
-inline thread_local std::array<uint64_t, max_scheduling_groups()> bytes_received = {};
+inline thread_local dst::context_local<std::array<uint64_t, max_scheduling_groups()>> bytes_sent;
+inline thread_local dst::context_local<std::array<uint64_t, max_scheduling_groups()>> bytes_received;
 
 };
 

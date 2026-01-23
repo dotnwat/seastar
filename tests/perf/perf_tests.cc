@@ -854,7 +854,7 @@ int main(int ac, char** av)
             }
             smp::invoke_on_all([seed = conf.random_seed] {
                 auto local_seed = seed + this_shard_id();
-                testing::local_random_engine.seed(local_seed);
+                testing::local_random_engine.get().seed(local_seed);
             }).get();
 
             run_all(tests_to_run, conf);

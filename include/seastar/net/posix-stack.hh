@@ -21,6 +21,7 @@
 
 #pragma once
 #include <unordered_set>
+#include <seastar/core/context_local.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/internal/pollable_fd.hh>
 #include <seastar/net/stack.hh>
@@ -177,9 +178,9 @@ class posix_ap_server_socket_impl : public server_socket_impl {
     using port_map_t = std::unordered_set<protocol_and_socket_address>;
     using sockets_map_t = std::unordered_map<protocol_and_socket_address, promise<accept_result>>;
     using conn_map_t = std::unordered_multimap<protocol_and_socket_address, connection>;
-    static thread_local port_map_t ports;
-    static thread_local sockets_map_t sockets;
-    static thread_local conn_map_t conn_q;
+    static thread_local dst::context_local<port_map_t> ports;
+    static thread_local dst::context_local<sockets_map_t> sockets;
+    static thread_local dst::context_local<conn_map_t> conn_q;
     int _protocol;
     socket_address _sa;
     std::pmr::polymorphic_allocator<char>* _allocator;

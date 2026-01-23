@@ -52,6 +52,7 @@
 #include <seastar/core/loop.hh>
 #include <seastar/util/defer.hh>
 #include <seastar/util/log.hh>
+#include <seastar/core/context_local.hh>
 #include <seastar/util/std-compat.hh>
 #include <seastar/util/read_first_line.hh>
 
@@ -62,7 +63,7 @@ namespace fs = std::filesystem;
 logger iotune_logger("iotune");
 
 using iotune_clock = std::chrono::steady_clock;
-static thread_local std::default_random_engine random_generator(std::chrono::duration_cast<std::chrono::nanoseconds>(iotune_clock::now().time_since_epoch()).count());
+static thread_local dst::context_local<std::default_random_engine> random_generator{std::default_random_engine(std::chrono::duration_cast<std::chrono::nanoseconds>(iotune_clock::now().time_since_epoch()).count())};
 
 void check_device_properties(fs::path dev_sys_file) {
     auto sched_file = dev_sys_file / "queue" / "scheduler";
@@ -302,7 +303,7 @@ public:
     }
 
     virtual uint64_t get_pos() {
-        uint64_t pos = _pos_distribution(random_generator) * _buffer_size;
+        uint64_t pos = _pos_distribution(random_generator.get()) * _buffer_size;
         if (pos >= _last_position) {
             throw invalid_position();
         }

@@ -40,6 +40,7 @@ module seastar;
 #include <seastar/core/print.hh>
 #include <seastar/net/inet_address.hh>
 #endif
+#include <seastar/core/context_local.hh>
 #include <seastar/util/assert.hh>
 
 namespace seastar {
@@ -314,16 +315,16 @@ rss_key_type interface::rss_key() const {
 }
 
 void interface::forward(unsigned cpuid, packet p) {
-    static __thread unsigned queue_depth;
+    static thread_local dst::context_local<unsigned> queue_depth;
 
-    if (queue_depth < 1000) {
-        queue_depth++;
+    if (queue_depth.get() < 1000) {
+        queue_depth.get()++;
         auto src_cpu = this_shard_id();
         // FIXME: future is discarded
         (void)smp::submit_to(cpuid, [this, p = std::move(p), src_cpu]() mutable {
             _dev->l2receive(p.free_on_cpu(src_cpu));
         }).then([] {
-            queue_depth--;
+            queue_depth.get()--;
         });
     }
 }

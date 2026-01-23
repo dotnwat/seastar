@@ -78,6 +78,7 @@
 #include <thread>
 
 #include <seastar/util/assert.hh>
+#include <seastar/core/context_local.hh>
 
 #include <fmt/format.h>
 #include <fmt/ostream.h>
@@ -118,6 +119,7 @@
 #include <seastar/core/posix.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/util/backtrace.hh>
+#include <seastar/core/context_local.hh>
 #endif
 
 #ifdef SEASTAR_DEBUG
@@ -152,7 +154,7 @@ seastar::logger seastar_memory_logger("seastar_memory");
 
 namespace internal {
 
-thread_local constinit int abort_on_alloc_failure_suppressed = 0;
+thread_local dst::context_local<int> abort_on_alloc_failure_suppressed;
 
 }
 
@@ -169,11 +171,7 @@ namespace internal {
 
 #ifdef SEASTAR_ENABLE_ALLOC_FAILURE_INJECTION
 
-#ifdef __cpp_constinit
-thread_local constinit volatile int critical_alloc_section = 0;
-#else
-__thread volatile int critical_alloc_section = 0;
-#endif
+thread_local dst::context_local<volatile int> critical_alloc_section;
 
 #endif  // SEASTAR_ENABLE_ALLOC_FAILURE_INJECTION
 
@@ -228,7 +226,7 @@ using std::optional;
 // is_reactor_thread gets set to true when memory::configure() gets called
 // it is used to identify seastar threads and hence use system memory allocator
 // for those threads
-static thread_local bool is_reactor_thread = false;
+static thread_local dst::context_local<bool> is_reactor_thread{false};
 
 // We default transparent hugepages to true since we prefer to transiently
 // use a transparent hugepage and then break it, to having the kernel
@@ -243,7 +241,7 @@ enum class types { allocs, frees, cross_cpu_frees, reclaims, large_allocs, faile
 using stats_array = std::array<uint64_t, static_cast<std::size_t>(types::enum_size)>;
 using stats_atomic_array = std::array<std::atomic_uint64_t, static_cast<std::size_t>(types::enum_size)>;
 
-static thread_local SEASTAR_CONSTINIT stats_array stats{};
+static thread_local dst::context_local<stats_array> stats;
 std::array<stats_atomic_array, max_cpus> alien_stats{};
 
 static void increment_local(types stat_type, uint64_t size = 1) {
@@ -297,7 +295,7 @@ using allocate_system_memory_fn
 
 namespace bi = boost::intrusive;
 
-static thread_local uintptr_t local_expected_cpu_id = std::numeric_limits<uintptr_t>::max();
+static thread_local dst::context_local<uintptr_t> local_expected_cpu_id{std::numeric_limits<uintptr_t>::max()};
 
 
 inline
@@ -646,7 +644,7 @@ struct cpu_pages {
     ~cpu_pages();
 };
 
-static thread_local cpu_pages cpu_mem;
+static thread_local dst::context_local<std::optional<cpu_pages>> cpu_mem;
 std::atomic<unsigned> cpu_pages::cpu_id_gen;
 cpu_pages* cpu_pages::all_cpus[max_cpus];
 
@@ -675,7 +673,7 @@ size_t get_heap_profiling_sample_rate() {
     return get_cpu_mem().heap_prof_sampler.sampling_interval();
 }
 
-static thread_local int64_t scoped_heap_profiling_embed_count = 0;
+static thread_local dst::context_local<int64_t> scoped_heap_profiling_embed_count{0};
 
 scoped_heap_profiling::scoped_heap_profiling(size_t sample_rate) noexcept {
     ++scoped_heap_profiling_embed_count;
@@ -948,7 +946,7 @@ cpu_pages::allocate_large_aligned(unsigned align_pages, unsigned n_pages, bool s
 }
 
 disable_backtrace_temporarily::disable_backtrace_temporarily()
-    : _disable_sampling(cpu_mem.heap_prof_sampler.pause_sampling()) {
+    : _disable_sampling(cpu_mem->value().heap_prof_sampler.pause_sampling()) {
 }
 
 static
@@ -959,28 +957,31 @@ simple_backtrace get_backtrace() noexcept {
 
 static
 allocation_site_ptr get_allocation_site() {
-    if (!cpu_mem.is_initialized() || !cpu_mem.heap_prof_sampler.sampling_interval()) {
+    if (!cpu_mem->has_value()) {
+        return nullptr;
+    }
+    if (!cpu_mem->value().is_initialized() || !cpu_mem->value().heap_prof_sampler.sampling_interval()) {
         return nullptr;
     }
     disable_backtrace_temporarily dbt;
     allocation_site new_alloc_site;
     new_alloc_site.backtrace = get_backtrace();
-    if (cpu_mem.asu.alloc_sites.size() >= 1000
-        && cpu_mem.asu.alloc_sites.find(new_alloc_site) == cpu_mem.asu.alloc_sites.end()) {
+    if (cpu_mem->value().asu.alloc_sites.size() >= 1000
+        && cpu_mem->value().asu.alloc_sites.find(new_alloc_site) == cpu_mem->value().asu.alloc_sites.end()) {
         // Drop sample for now. Could do something smarter like dropping a
         // current one at random but needs more work in remove_alloc_site as we
         // might then have allocations for which the allocsite is no longer
         // alive
         return nullptr;
     }
-    auto insert_result = cpu_mem.asu.alloc_sites.insert(std::move(new_alloc_site));
+    auto insert_result = cpu_mem->value().asu.alloc_sites.insert(std::move(new_alloc_site));
     allocation_site_ptr alloc_site = &*insert_result.first;
     if (insert_result.second) {
-        alloc_site->next = cpu_mem.alloc_site_list_head;
-        if (cpu_mem.alloc_site_list_head) {
-            cpu_mem.alloc_site_list_head->prev = alloc_site;
+        alloc_site->next = cpu_mem->value().alloc_site_list_head;
+        if (cpu_mem->value().alloc_site_list_head) {
+            cpu_mem->value().alloc_site_list_head->prev = alloc_site;
         }
-        cpu_mem.alloc_site_list_head = alloc_site;
+        cpu_mem->value().alloc_site_list_head = alloc_site;
     }
     return alloc_site;
 }
@@ -1117,7 +1118,7 @@ void cpu_pages::free(void* ptr, size_t size) {
 [[gnu::always_inline]]
 inline bool
 cpu_pages::is_local_pointer(void* ptr) {
-    return (reinterpret_cast<uintptr_t>(ptr) & cpu_id_and_mem_base_mask) == local_expected_cpu_id;
+    return (reinterpret_cast<uintptr_t>(ptr) & cpu_id_and_mem_base_mask) == local_expected_cpu_id.get();
 }
 
 // Try to execute free on the fast path, which succeeds if:
@@ -1232,7 +1233,7 @@ bool cpu_pages::initialize() {
         return false;
     }
     cpu_id = cpu_id_gen.fetch_add(1, std::memory_order_relaxed);
-    local_expected_cpu_id = (static_cast<uint64_t>(cpu_id) << cpu_id_shift)
+    local_expected_cpu_id.get() = (static_cast<uint64_t>(cpu_id) << cpu_id_shift)
 	        | reinterpret_cast<uintptr_t>(mem_base());
     SEASTAR_ASSERT(cpu_id < max_cpus);
     all_cpus[cpu_id] = this;
@@ -1578,13 +1579,16 @@ size_t object_size(void* ptr) {
     return cpu_pages::all_cpus[object_cpu_id(ptr)]->object_size(ptr);
 }
 
-static thread_local cpu_pages* cpu_mem_ptr = nullptr;
+static thread_local dst::context_local_ptr<cpu_pages> cpu_mem_ptr;
 
 // Mark as cold so that GCC8+ can move to .text.unlikely.
 [[gnu::cold]]
 static void init_cpu_mem() {
-    cpu_mem_ptr = &cpu_mem;
-    cpu_mem.initialize();
+    if (!cpu_mem->has_value()) {
+        cpu_mem->emplace();
+    }
+    cpu_mem_ptr = &cpu_mem->value();
+    cpu_mem->value().initialize();
 }
 
 [[gnu::always_inline]]
@@ -1887,10 +1891,10 @@ internal::numa_layout
 configure(std::vector<resource::memory> m, bool mbind,
         bool transparent_hugepages,
         optional<std::string> hugetlbfs_path) {
-    // we need to make sure cpu_mem is initialize since configure calls cpu_mem.resize
+    // we need to make sure cpu_mem is initialize since configure calls cpu_mem->value().resize
     // and we might reach configure without ever allocating, hence without ever calling
     // cpu_pages::initialize.
-    // The correct solution is to add a condition inside cpu_mem.resize, but since all
+    // The correct solution is to add a condition inside cpu_mem->value().resize, but since all
     // other paths to cpu_pages::resize are already verifying initialize was called, we
     // verify that here.
     use_transparent_hugepages.store(transparent_hugepages, std::memory_order_relaxed);
@@ -1898,7 +1902,7 @@ configure(std::vector<resource::memory> m, bool mbind,
     // init_cpu_mem() could have been called very early, see call site in allocate().
     // In that case we don't know about the transparent_hugepages parameter and conservatively
     // assume it's true. Undo that here if it turned out to be false.
-    maybe_disable_transparent_hugepages(cpu_mem.memory, cpu_mem.nr_pages * page_size);
+    maybe_disable_transparent_hugepages(cpu_mem->value().memory, cpu_mem->value().nr_pages * page_size);
     is_reactor_thread = true;
     internal::numa_layout ret_layout;
     size_t total = 0;
@@ -1945,8 +1949,16 @@ configure(std::vector<resource::memory> m, bool mbind,
 }
 
 statistics stats() {
+    cpu_pages* local_cpu_mem;
+    std::optional<cpu_pages> faked;
+    if (cpu_mem->has_value()) {
+        local_cpu_mem = &cpu_mem->value();
+    } else {
+        faked.emplace();
+        local_cpu_mem = &faked.value();
+    }
     return statistics{alloc_stats::get(alloc_stats::types::allocs), alloc_stats::get(alloc_stats::types::frees), alloc_stats::get(alloc_stats::types::cross_cpu_frees),
-        cpu_mem.nr_pages * page_size, cpu_mem.nr_free_pages * page_size, alloc_stats::get(alloc_stats::types::reclaims), alloc_stats::get(alloc_stats::types::large_allocs),
+        local_cpu_mem->nr_pages * page_size, local_cpu_mem->nr_free_pages * page_size, alloc_stats::get(alloc_stats::types::reclaims), alloc_stats::get(alloc_stats::types::large_allocs),
         alloc_stats::get(alloc_stats::types::failed_allocs), alloc_stats::get(alloc_stats::types::foreign_mallocs), alloc_stats::get(alloc_stats::types::foreign_frees),
         alloc_stats::get(alloc_stats::types::foreign_cross_frees)};
 }
@@ -1971,7 +1983,7 @@ void set_min_free_pages(size_t pages) {
     get_cpu_mem().set_min_free_pages(pages);
 }
 
-static thread_local int report_on_alloc_failure_suppressed = 0;
+static thread_local dst::context_local<int> report_on_alloc_failure_suppressed{0};
 
 class disable_report_on_alloc_failure_temporarily {
 public:
@@ -2010,10 +2022,10 @@ void set_dump_memory_diagnostics_on_alloc_failure_kind(std::string_view str) {
     }
 }
 
-static thread_local noncopyable_function<void(memory_diagnostics_writer)> additional_diagnostics_producer;
+static thread_local dst::context_local<noncopyable_function<void(memory_diagnostics_writer)>> additional_diagnostics_producer;
 
 void set_additional_diagnostics_producer(noncopyable_function<void(memory_diagnostics_writer)> producer) {
-    additional_diagnostics_producer = std::move(producer);
+    additional_diagnostics_producer.get() = std::move(producer);
 }
 
 struct human_readable_value {
@@ -2070,7 +2082,7 @@ seastar::internal::log_buf::inserter_iterator do_dump_memory_diagnostics(seastar
     it = fmt::format_to(it, "Total memory:  {}\n", to_hr_size(total_mem));
     it = fmt::format_to(it, "Hard failures: {}\n\n", alloc_stats::get(alloc_stats::types::failed_allocs));
 
-    if (additional_diagnostics_producer) {
+    if (additional_diagnostics_producer.get()) {
         additional_diagnostics_producer([&it] (std::string_view v) mutable {
             it = fmt::format_to(it, fmt::runtime(v));
         });
@@ -2194,8 +2206,11 @@ void maybe_dump_memory_diagnostics(size_t size, bool is_aborting) {
         lvl = log_level::error;
     }
 
-    static thread_local logger::rate_limit rate_limit(std::chrono::seconds(10));
-    dump_memory_diagnostics(lvl, rate_limit);
+    static thread_local dst::context_local<std::optional<logger::rate_limit>> rate_limit;
+    if (!rate_limit->has_value()) {
+        rate_limit->emplace(std::chrono::seconds(10));
+    }
+    dump_memory_diagnostics(lvl, rate_limit->value());
 
 
 }
@@ -2203,7 +2218,7 @@ void maybe_dump_memory_diagnostics(size_t size, bool is_aborting) {
 void on_allocation_failure(size_t size) {
     alloc_stats::increment(alloc_stats::types::failed_allocs);
 
-    bool will_abort = !internal::abort_on_alloc_failure_suppressed
+    bool will_abort = !internal::abort_on_alloc_failure_suppressed.get()
             && abort_on_allocation_failure.load(std::memory_order_relaxed);
 
     maybe_dump_memory_diagnostics(size, will_abort);

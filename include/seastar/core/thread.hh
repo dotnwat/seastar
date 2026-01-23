@@ -81,7 +81,7 @@ public:
 };
 
 /// \cond internal
-extern thread_local jmp_buf_link g_unthreaded_context;
+extern thread_local dst::context_local<jmp_buf_link> g_unthreaded_context;
 
 // Internal class holding thread state.  We can't hold this in
 // \c thread itself because \c thread is movable, and we want pointers
@@ -106,7 +106,7 @@ class thread_context final : private task {
         &thread_context::_all_link>,
         boost::intrusive::constant_time_size<false>>;
 
-    static thread_local all_thread_list _all_threads;
+    static thread_local dst::context_local<all_thread_list> _all_threads;
 private:
     static void s_main(int lo, int hi); // all parameters MUST be 'int' for makecontext
     void setup(size_t stack_size);
@@ -137,7 +137,7 @@ public:
 /// becomes ready.
 class thread {
     std::unique_ptr<thread_context> _context;
-    static thread_local thread* _current;
+    static thread_local dst::context_local_ptr<thread> _current;
 public:
     /// \brief Constructs a \c thread object that does not represent a thread
     /// of execution.
