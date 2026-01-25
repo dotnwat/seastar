@@ -3212,8 +3212,41 @@ int reactor::run() noexcept {
     }
 }
 
+
+// RAII objects that hold state while the reactor is running its core loop
+struct reactor::do_run_state {
+    decltype(install_signal_handler_stack()) signal_stack;
+
+    // optional because poller doesn't have a default constructor
+    std::optional<reactor::poller> smp_poller;
+    std::optional<reactor::poller> reap_kernel_completions_poller;
+    std::optional<reactor::poller> io_queue_submission_poller;
+    std::optional<reactor::poller> kernel_submit_work_poller;
+    std::optional<reactor::poller> final_real_kernel_completions_poller;
+    std::optional<reactor::poller> batch_flush_poller;
+    std::optional<reactor::poller> execution_stage_poller;
+    std::optional<reactor::poller> syscall_poller;
+    std::optional<reactor::poller> drain_cross_cpu_freelist;
+    std::optional<reactor::poller> expire_lowres_timers;
+    std::optional<reactor::poller> sig_poller;
+
+    sched_clock::duration last_idle;
+    sched_clock::time_point idle_start;
+    sched_clock::time_point idle_end;
+};
+
 int reactor::do_run() {
-    auto signal_stack = install_signal_handler_stack();
+    auto do_run_state_cleanup = defer([this] () noexcept { _do_run_state.reset(); });
+    do_run_prepare();
+    while (_do_run_step()) {}
+    _do_run_cleanup();
+    return _return;
+}
+
+void reactor::do_run_prepare() {
+    _do_run_state = std::make_unique<do_run_state>();
+
+    _do_run_state->signal_stack = install_signal_handler_stack();
 
     register_metrics();
 
@@ -3234,15 +3267,15 @@ int reactor::do_run() {
     // 5. kernel submission: for I/O, will submit what was generated from last step.
     // 6. reap kernel events completion: some of the submissions from last step may return immediately.
     //                                   For example if we are dealing with poll() on a fd that has events.
-    poller smp_poller(std::make_unique<smp_pollfn>(*this));
+    _do_run_state->smp_poller.emplace(std::make_unique<smp_pollfn>(*this));
 
-    poller reap_kernel_completions_poller(std::make_unique<reap_kernel_completions_pollfn>(*this));
-    poller io_queue_submission_poller(std::make_unique<io_queue_submission_pollfn>(*this));
-    poller kernel_submit_work_poller(std::make_unique<kernel_submit_work_pollfn>(*this));
-    poller final_real_kernel_completions_poller(std::make_unique<reap_kernel_completions_pollfn>(*this));
+    _do_run_state->reap_kernel_completions_poller.emplace(std::make_unique<reap_kernel_completions_pollfn>(*this));
+    _do_run_state->io_queue_submission_poller.emplace(std::make_unique<io_queue_submission_pollfn>(*this));
+    _do_run_state->kernel_submit_work_poller.emplace(std::make_unique<kernel_submit_work_pollfn>(*this));
+    _do_run_state->final_real_kernel_completions_poller.emplace(std::make_unique<reap_kernel_completions_pollfn>(*this));
 
-    poller batch_flush_poller(std::make_unique<batch_flush_pollfn>(*this));
-    poller execution_stage_poller(std::make_unique<execution_stage_pollfn>());
+    _do_run_state->batch_flush_poller.emplace(std::make_unique<batch_flush_pollfn>(*this));
+    _do_run_state->execution_stage_poller.emplace(std::make_unique<execution_stage_pollfn>());
 
     start_aio_eventfd_loop();
 
@@ -3270,17 +3303,20 @@ int reactor::do_run() {
         });
     }
 
-    poller syscall_poller(std::make_unique<syscall_pollfn>(*this));
+    _do_run_state->syscall_poller.emplace(std::make_unique<syscall_pollfn>(*this));
 
-    poller drain_cross_cpu_freelist(std::make_unique<drain_cross_cpu_freelist_pollfn>());
+    _do_run_state->drain_cross_cpu_freelist.emplace(std::make_unique<drain_cross_cpu_freelist_pollfn>());
 
-    poller expire_lowres_timers(std::make_unique<lowres_timer_pollfn>(*this));
-    poller sig_poller(std::make_unique<signal_pollfn>(*this));
+    _do_run_state->expire_lowres_timers.emplace(std::make_unique<lowres_timer_pollfn>(*this));
+    _do_run_state->sig_poller.emplace(std::make_unique<signal_pollfn>(*this));
 
     using namespace std::chrono_literals;
-    auto last_idle = _total_idle;
-    auto idle_start = now(), idle_end = idle_start;
-    _load_timer.set_callback([this, &last_idle, &idle_start, &idle_end] () mutable {
+    _do_run_state->last_idle = _total_idle;
+    _do_run_state->idle_start = now(), _do_run_state->idle_end = _do_run_state->idle_start;
+    _load_timer.set_callback([this] () mutable {
+        auto& last_idle = _do_run_state->last_idle;
+        auto& idle_start = _do_run_state->idle_start;
+        auto& idle_end = _do_run_state->idle_end;
         _total_idle += idle_end - idle_start;
         auto load = double((_total_idle - last_idle).count()) / double(std::chrono::duration_cast<sched_clock::duration>(1s).count());
         last_idle = _total_idle;
@@ -3295,7 +3331,6 @@ int reactor::do_run() {
 
     itimerspec its = seastar::posix::to_relative_itimerspec(_cfg.task_quota, _cfg.task_quota);
     _task_quota_timer.timerfd_settime(0, its);
-    auto& task_quote_itimerspec = its;
 
     struct sigaction sa_block_notifier = {};
     sa_block_notifier.sa_handler = &reactor::block_notifier;
@@ -3303,18 +3338,19 @@ int reactor::do_run() {
     auto r = sigaction(internal::cpu_stall_detector::signal_number(), &sa_block_notifier, nullptr);
     SEASTAR_ASSERT(r == 0);
 
-    bool idle = false;
-
     auto check_for_work = [this] () {
         return poll_once() || have_more_tasks();
     };
-    const noncopyable_function<bool()> pure_check_for_work = [this] () {
+    auto pure_check_for_work = [this] () {
         return pure_poll_once() || have_more_tasks();
     };
-    while (true) {
+    _do_run_step = [this, idle{false}, its, check_for_work, pure_check_for_work] () mutable {
+        auto& idle_start = _do_run_state->idle_start;
+        auto& idle_end = _do_run_state->idle_end;
+
         _cpu_sched.run_some_tasks();
         if (_stopped) {
-            break;
+            return false;
         }
 
         _polls++;
@@ -3357,6 +3393,7 @@ int reactor::do_run() {
                         _cpu_stall_detector->end_sleep();
                         // We may have slept for a while, so freshen idle_end
                         idle_end = now();
+                        auto& task_quote_itimerspec = its;
                         _task_quota_timer.timerfd_settime(0, task_quote_itimerspec);
                     }
                 }
@@ -3366,27 +3403,29 @@ int reactor::do_run() {
                 check_for_work();
             }
         }
-    }
+        return true;
+    };
 
-    _load_timer.cancel();
-    // Final tasks may include sending the last response to cpu 0, so run them
-    while (have_more_tasks()) {
-        _cpu_sched.run_some_tasks();
-    }
-    while (_at_destroy_tasks->run_tasks()) {
-        // keep running while it's active
-    }
-    _finished_running_tasks = true;
-    _smp->arrive_at_event_loop_end();
-    if (_id == 0) {
-        _smp->join_all();
-    }
-    // To prevent ordering issues from rising, destroy the I/O queue explicitly at this point.
-    // This is needed because the reactor is destroyed from the thread_local destructors. If
-    // the I/O queue happens to use any other infrastructure that is also kept this way (for
-    // instance, collectd), we will not have any way to guarantee who is destroyed first.
-    _io_queues.clear();
-    return _return;
+    _do_run_cleanup = [this] {
+        _load_timer.cancel();
+        // Final tasks may include sending the last response to cpu 0, so run them
+        while (have_more_tasks()) {
+            _cpu_sched.run_some_tasks();
+        }
+        while (_at_destroy_tasks->run_tasks()) {
+            // keep running while it's active
+        }
+        _finished_running_tasks = true;
+        _smp->arrive_at_event_loop_end();
+        if (_id == 0) {
+            _smp->join_all();
+        }
+        // To prevent ordering issues from rising, destroy the I/O queue explicitly at this point.
+        // This is needed because the reactor is destroyed from the thread_local destructors. If
+        // the I/O queue happens to use any other infrastructure that is also kept this way (for
+        // instance, collectd), we will not have any way to guarantee who is destroyed first.
+        _io_queues.clear();
+    };
 }
 
 bool

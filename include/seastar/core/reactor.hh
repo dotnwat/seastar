@@ -472,7 +472,13 @@ private:
     do_recv_some(pollable_fd_state& fd, internal::buffer_allocator* ba);
 
     void configure(const reactor_options& opts);
+
+    struct do_run_state;
+    std::unique_ptr<do_run_state> _do_run_state;
     int do_run();
+    void do_run_prepare();
+    noncopyable_function<bool()> _do_run_step;
+    noncopyable_function<void()> _do_run_cleanup;
     // Waits for all background tasks on all shards
     static future<> drain();
 
