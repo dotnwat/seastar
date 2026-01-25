@@ -114,6 +114,10 @@ seastar_add_demo (udp_zero_copy
 seastar_add_demo (sharded_parameter
   SOURCES sharded_parameter_demo.cc)
 
+seastar_add_demo (dst_demo
+  SOURCES dst_demo.cc)
+target_link_libraries(demo_dst_demo PRIVATE -lz)
+
 seastar_add_demo (file
   SOURCES file_demo.cc)
 

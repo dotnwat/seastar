@@ -83,6 +83,15 @@ struct smp_options : public program_options::option_group {
     /// \note Unused when seastar is compiled without \p HWLOC support.
     program_options::value<bool> allow_cpus_in_remote_numa_nodes;
 
+    /// Enable deterministic simulation testing mode.
+    /// When enabled, all reactors run on a single thread with cooperative scheduling.
+    ///
+    /// Default: \p false.
+    program_options::value<bool> dst;
+    /// Seed for the deterministic simulation testing random number generator.
+    /// If not specified, a random seed will be used.
+    program_options::value<unsigned> dst_seed;
+
     /// Memory allocator to use.
     ///
     /// The following options only have effect if the \ref memory_allocator::seastar is used:

@@ -189,6 +189,17 @@ static_assert(posix::shutdown_mask(SHUT_RDWR) == (posix::snd_shutdown | posix::r
 
 namespace seastar {
 
+struct context_switcher {
+    std::size_t orig;
+    context_switcher(std::size_t next) {
+        orig = dst::current_context;
+        dst::switch_context(next);
+    }
+    ~context_switcher() {
+        dst::switch_context(orig);
+    }
+};
+
 seastar::logger seastar_logger("seastar");
 
 shard_id reactor::cpu_id() const {
@@ -2657,7 +2668,7 @@ bool reactor::task_queue::run_tasks() {
         ++_tasks_processed;
         ++r._global_tasks_processed;
         // check at end of loop, to allow at least one task to run
-        if (internal::scheduler_need_preempt()) {
+        if (false && internal::scheduler_need_preempt()) {
             if (_q.size() <= r._cfg.max_task_backlog) {
                 break;
             } else {
@@ -2688,7 +2699,10 @@ namespace {
 
 #ifdef SEASTAR_SHUFFLE_TASK_QUEUE
 void shuffle(task*& t, circular_buffer<task*>& q) {
-    static thread_local dst::context_local<std::mt19937> gen{std::mt19937(std::default_random_engine()())};
+    //static thread_local dst::context_local<std::mt19937> gen{std::mt19937(std::default_random_engine()())};
+    //
+    // default constructor with fixed seed
+    static thread_local dst::context_local<std::mt19937> gen;
     std::uniform_int_distribution<size_t> tasks_dist{0, q.size() - 1};
     auto& to_swap = q[tasks_dist(gen.get())];
     std::swap(to_swap, t);
@@ -3203,8 +3217,51 @@ void reactor::service_highres_timer() noexcept {
 }
 
 int reactor::run() noexcept {
+    if (!_dst) {
+        try {
+            return do_run();
+        } catch (const std::exception& e) {
+            seastar_logger.error("{}", e.what());
+            print_with_backtrace("exception running reactor main loop");
+            _exit(1);
+        }
+    }
+
     try {
-        return do_run();
+        // finish core 0 setup
+        do_run_prepare();
+
+        // track if reactor stopped
+        std::vector<int> stopped;
+        stopped.resize(smp::count, 0);
+
+        while (true) {
+            bool all_stopped = true;
+            for (unsigned i = 0; i < smp::count; ++i) {
+                if (!stopped[i]) {
+                    all_stopped = false;
+                    context_switcher ctx(i);
+                    auto reactor_cleanup = defer([] () noexcept { engine()._do_run_state.reset(); });
+                    if (!engine()._do_run_step()) {
+                        stopped[i] = 1;
+                        engine()._do_run_cleanup_start();
+                    }
+                    reactor_cleanup.cancel();
+                }
+            }
+            if (all_stopped) {
+                break;
+            }
+        }
+
+        for (unsigned i = 0; i < smp::count; ++i) {
+            context_switcher ctx(i);
+            auto reactor_cleanup = defer([] () noexcept { engine()._do_run_state.reset(); });
+            engine()._do_run_cleanup_finish();
+        }
+
+        return _return;
+
     } catch (const std::exception& e) {
         seastar_logger.error("{}", e.what());
         print_with_backtrace("exception running reactor main loop");
@@ -3215,6 +3272,10 @@ int reactor::run() noexcept {
 
 // RAII objects that hold state while the reactor is running its core loop
 struct reactor::do_run_state {
+    using install_handler_t = decltype(install_signal_handler_stack());
+
+    do_run_state(install_handler_t&& h) : signal_stack(std::move(h)) {}
+
     decltype(install_signal_handler_stack()) signal_stack;
 
     // optional because poller doesn't have a default constructor
@@ -3239,14 +3300,14 @@ int reactor::do_run() {
     auto do_run_state_cleanup = defer([this] () noexcept { _do_run_state.reset(); });
     do_run_prepare();
     while (_do_run_step()) {}
-    _do_run_cleanup();
+    _do_run_cleanup_start();
+    _smp->arrive_at_event_loop_end();
+    _do_run_cleanup_finish();
     return _return;
 }
 
 void reactor::do_run_prepare() {
-    _do_run_state = std::make_unique<do_run_state>();
-
-    _do_run_state->signal_stack = install_signal_handler_stack();
+    _do_run_state = std::make_unique<do_run_state>(install_signal_handler_stack());
 
     register_metrics();
 
@@ -3356,6 +3417,10 @@ void reactor::do_run_prepare() {
         _polls++;
 
         lowres_clock::update(); // Don't delay expiring lowres timers
+
+        check_for_work();
+        return true;
+
         if (check_for_work()) {
             if (idle) {
                 _total_idle += idle_end - idle_start;
@@ -3381,6 +3446,9 @@ void reactor::do_run_prepare() {
             if (go_to_sleep) {
                 internal::cpu_relax();
                 if (idle_end - idle_start > _cfg.max_poll_time) {
+                    // TODO disabling this interrupt mode makese things run
+                    // faster, but some tests seem to depend on it otherwise
+                    // hangs.
                     if (pollers_enter_interrupt_mode()) {
                         // Turn off the task quota timer to avoid spurious wakeups
                         struct itimerspec zero_itimerspec = {};
@@ -3406,7 +3474,7 @@ void reactor::do_run_prepare() {
         return true;
     };
 
-    _do_run_cleanup = [this] {
+    _do_run_cleanup_start = [this] {
         _load_timer.cancel();
         // Final tasks may include sending the last response to cpu 0, so run them
         while (have_more_tasks()) {
@@ -3416,7 +3484,9 @@ void reactor::do_run_prepare() {
             // keep running while it's active
         }
         _finished_running_tasks = true;
-        _smp->arrive_at_event_loop_end();
+    };
+
+    _do_run_cleanup_finish = [this] {
         if (_id == 0) {
             _smp->join_all();
         }
@@ -3997,6 +4067,8 @@ smp_options::smp_options(program_options::option_group* parent_group)
 #else
     , allow_cpus_in_remote_numa_nodes(*this, "allow-cpus-in-remote-numa-nodes", program_options::unused{})
 #endif
+    , dst(*this, "dst", false, "enable deterministic simulation testing mode")
+    , dst_seed(*this, "dst-seed", {}, "seed for DST random number generator (default: random)")
 {
 }
 
@@ -4654,56 +4726,93 @@ void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_
         assign_io_queues(i);
     };
 
-    unsigned i;
-    for (i = 1; i < smp::count; i++) {
-        create_thread([register_reactor, construct_smp_queues, setup_queues, inited, &reactors_registered, &smp_queues_constructed, &reactor_opts, i] {
-          try {
-            register_reactor(i);
-            reactors_registered.arrive_and_wait();
-            construct_smp_queues(i);
-            smp_queues_constructed.arrive_and_wait();
-            setup_queues(i);
-            inited->arrive_and_wait();
-            engine().configure(reactor_opts);
-            engine().do_run();
-          } catch (const std::exception& e) {
-              seastar_logger.error("{}", e.what());
-              _exit(1);
-          }
-        });
-    }
+    auto shard0_register_reactor = [&] {
+        init_default_smp_service_group(0);
+        lowres_clock::update();
+        try {
+            allocate_reactor(0, backend_selector, reactor_cfg);
+        } catch (const std::exception& e) {
+            seastar_logger.error("{}", e.what());
+            _exit(1);
+        }
 
-    init_default_smp_service_group(0);
-    lowres_clock::update();
-    try {
-        allocate_reactor(0, backend_selector, reactor_cfg);
-    } catch (const std::exception& e) {
-        seastar_logger.error("{}", e.what());
-        _exit(1);
-    }
-
-    reactors[0] = &engine();
-    alloc_io_queues(0);
+        reactors[0] = &engine();
+        alloc_io_queues(0);
 
 #ifdef SEASTAR_HAVE_DPDK
-    if (_using_dpdk) {
-        auto it = _thread_loops.begin();
-        RTE_LCORE_FOREACH_WORKER(i) {
-            rte_eal_remote_launch(dpdk_thread_adaptor, static_cast<void*>(&*(it++)), i);
+        if (_using_dpdk) {
+            auto it = _thread_loops.begin();
+            RTE_LCORE_FOREACH_WORKER(i) {
+                rte_eal_remote_launch(dpdk_thread_adaptor, static_cast<void*>(&*(it++)), i);
+            }
         }
-    }
 #endif
 
-    allocate_qs_owner(0);
-    reactors_registered.arrive_and_wait();
-    _qs = _qs_owner.get();
-    allocate_smp_queues(0);
-    _alien._qs = alien::instance::create_qs(reactors);
-    smp_queues_constructed.arrive_and_wait();
-    start_all_queues();
-    assign_io_queues(0);
-    inited->arrive_and_wait();
+        allocate_qs_owner(0);
+    };
 
+    auto shard0_construct_smp_queues = [&] {
+        _qs = _qs_owner.get();
+        allocate_smp_queues(0);
+        _alien._qs = alien::instance::create_qs(reactors);
+    };
+
+    unsigned i;
+    if (smp_opts.dst.get_value()) {
+        // Reactors are the only users of the DST thread local virtualization
+        // right now, so we are just re-using the shard-id as the context-id.
+        try {
+            shard0_register_reactor();
+            for (i = 1; i < smp::count; i++) {
+                context_switcher ctx(i);
+                register_reactor(i);
+            }
+            shard0_construct_smp_queues();
+            for (i = 1; i < smp::count; i++) {
+                context_switcher ctx(i);
+                construct_smp_queues(i);
+            }
+            for (i = 0 /* with core 0 */; i < smp::count; i++) {
+                context_switcher ctx(i);
+                setup_queues(i);
+            }
+            for (i = 1; i < smp::count; i++) {
+                context_switcher ctx(i);
+                engine().configure(reactor_opts);
+                engine().do_run_prepare();
+            }
+        } catch (const std::exception& e) {
+            seastar_logger.error("{}", e.what());
+            _exit(1);
+        }
+    } else {
+        for (i = 1; i < smp::count; i++) {
+            create_thread([register_reactor, construct_smp_queues, setup_queues, inited, &reactors_registered, &smp_queues_constructed, &reactor_opts, i] {
+              try {
+                register_reactor(i);
+                reactors_registered.arrive_and_wait();
+                construct_smp_queues(i);
+                smp_queues_constructed.arrive_and_wait();
+                setup_queues(i);
+                inited->arrive_and_wait();
+                engine().configure(reactor_opts);
+                engine().do_run();
+              } catch (const std::exception& e) {
+                  seastar_logger.error("{}", e.what());
+                  _exit(1);
+              }
+            });
+        }
+
+        shard0_register_reactor();
+        reactors_registered.arrive_and_wait();
+        shard0_construct_smp_queues();
+        smp_queues_constructed.arrive_and_wait();
+        setup_queues(0);
+        inited->arrive_and_wait();
+    }
+
+    engine()._dst = smp_opts.dst.get_value();
     engine().configure(reactor_opts);
 
     if (smp_opts.lock_memory && smp_opts.lock_memory.get_value() && layout && !layout->ranges.empty()) {

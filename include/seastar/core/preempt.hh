@@ -93,7 +93,7 @@ scheduler_need_preempt() {
     // We still check if preemption was requested to allow lowres_clock
     // updates.
     static thread_local dst::context_local<unsigned> counter{0};
-    return ++counter % 64 == 0 || monitor_need_preempt();;
+    return ++counter % 64 == 0;// || monitor_need_preempt();;
 #endif
 }
 

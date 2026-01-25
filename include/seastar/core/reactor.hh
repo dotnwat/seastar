@@ -263,6 +263,7 @@ private:
     uint64_t _fsyncs = 0;
     uint64_t _cxx_exceptions = 0;
     uint64_t _abandoned_failed_futures = 0;
+    bool _dst{false};
 
     struct task_queue_group;
 
@@ -478,7 +479,8 @@ private:
     int do_run();
     void do_run_prepare();
     noncopyable_function<bool()> _do_run_step;
-    noncopyable_function<void()> _do_run_cleanup;
+    noncopyable_function<void()> _do_run_cleanup_start;
+    noncopyable_function<void()> _do_run_cleanup_finish;
     // Waits for all background tasks on all shards
     static future<> drain();
 
