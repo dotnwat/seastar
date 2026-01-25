@@ -4608,49 +4608,61 @@ void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_
         }
     };
 
-    unsigned i;
     auto smp_tmain = smp::_tmain.get();
-    for (i = 1; i < smp::count; i++) {
+    auto register_reactor = [this, smp_tmain, &smp_opts, &reactors, hugepages_path, &allocations, alloc_io_queues, thread_affinity, heapprof_sampling_rate, mbind, backend_selector, reactor_cfg, &mtx, &layout, use_transparent_hugepages, allocate_qs_owner] (unsigned i) {
+        // initialize thread_locals that are equal across all reacto threads of this smp instance
         auto allocation = allocations[i];
-        create_thread([this, smp_tmain, inited, &reactors_registered, &smp_queues_constructed, &smp_opts, &reactor_opts, &reactors, hugepages_path, i, allocation, assign_io_queues, alloc_io_queues, thread_affinity, heapprof_sampling_rate, mbind, backend_selector, reactor_cfg, &mtx, &layout, use_transparent_hugepages, allocate_qs_owner, allocate_smp_queues] {
+        smp::_tmain.get() = smp_tmain;
+        auto thread_name = fmt::format("reactor-{}", i);
+        pthread_setname_np(pthread_self(), thread_name.c_str());
+        if (thread_affinity) {
+            smp::pin(allocation.cpu_id);
+        }
+        if (smp_opts.memory_allocator == memory_allocator::seastar) {
+            auto another_layout = memory::configure(allocation.mem, mbind, use_transparent_hugepages, hugepages_path);
+            auto guard = std::lock_guard(mtx);
+            *layout = memory::internal::merge(std::move(*layout), std::move(another_layout));
+        } else {
+            // See comment above (shard 0)
+            memory::configure_minimal();
+        }
+        if (heapprof_sampling_rate) {
+            memory::set_heap_profiling_sampling_rate(heapprof_sampling_rate);
+        }
+        sigset_t mask;
+        sigfillset(&mask);
+        for (auto sig : { SIGSEGV, SIGILL }) {
+            sigdelset(&mask, sig);
+        }
+        auto r = ::pthread_sigmask(SIG_BLOCK, &mask, NULL);
+        throw_pthread_error(r);
+        init_default_smp_service_group(i);
+        lowres_clock::update();
+        allocate_reactor(i, backend_selector, reactor_cfg);
+        reactors[i] = &engine();
+        alloc_io_queues(i);
+        allocate_qs_owner(i);
+        _qs = _qs_owner.get();
+    };
+
+    auto construct_smp_queues = [allocate_smp_queues] (unsigned i) {
+        allocate_smp_queues(i);
+    };
+
+    auto setup_queues = [this, assign_io_queues] (unsigned i) {
+        start_all_queues();
+        assign_io_queues(i);
+    };
+
+    unsigned i;
+    for (i = 1; i < smp::count; i++) {
+        create_thread([register_reactor, construct_smp_queues, setup_queues, inited, &reactors_registered, &smp_queues_constructed, &reactor_opts, i] {
           try {
-            // initialize thread_locals that are equal across all reacto threads of this smp instance
-            smp::_tmain.get() = smp_tmain;
-            auto thread_name = fmt::format("reactor-{}", i);
-            pthread_setname_np(pthread_self(), thread_name.c_str());
-            if (thread_affinity) {
-                smp::pin(allocation.cpu_id);
-            }
-            if (smp_opts.memory_allocator == memory_allocator::seastar) {
-                auto another_layout = memory::configure(allocation.mem, mbind, use_transparent_hugepages, hugepages_path);
-                auto guard = std::lock_guard(mtx);
-                *layout = memory::internal::merge(std::move(*layout), std::move(another_layout));
-            } else {
-                // See comment above (shard 0)
-                memory::configure_minimal();
-            }
-            if (heapprof_sampling_rate) {
-                memory::set_heap_profiling_sampling_rate(heapprof_sampling_rate);
-            }
-            sigset_t mask;
-            sigfillset(&mask);
-            for (auto sig : { SIGSEGV, SIGILL }) {
-                sigdelset(&mask, sig);
-            }
-            auto r = ::pthread_sigmask(SIG_BLOCK, &mask, NULL);
-            throw_pthread_error(r);
-            init_default_smp_service_group(i);
-            lowres_clock::update();
-            allocate_reactor(i, backend_selector, reactor_cfg);
-            reactors[i] = &engine();
-            alloc_io_queues(i);
-            allocate_qs_owner(i);
-            _qs = _qs_owner.get();
+            register_reactor(i);
             reactors_registered.arrive_and_wait();
-            allocate_smp_queues(i);
+            construct_smp_queues(i);
             smp_queues_constructed.arrive_and_wait();
-            start_all_queues();
-            assign_io_queues(i);
+            setup_queues(i);
             inited->arrive_and_wait();
             engine().configure(reactor_opts);
             engine().do_run();
