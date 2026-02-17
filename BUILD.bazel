@@ -1,0 +1,2279 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "int_flag")
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
+load("@protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
+load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+buildifier(
+    name = "buildifier.fix",
+    exclude_patterns = ["./.git/*"],
+    lint_mode = "fix",
+    mode = "fix",
+)
+
+buildifier(
+    name = "buildifier.check",
+    exclude_patterns = ["./.git/*"],
+    lint_mode = "warn",
+    mode = "diff",
+)
+
+bool_flag(
+    name = "stack_guards",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "task_backtrace",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "heap_profiling",
+    build_setting_default = True,
+)
+
+bool_flag(
+    name = "logger_compile_time_fmt",
+    build_setting_default = True,
+)
+
+bool_flag(
+    name = "debug_allocations",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "sstring",
+    build_setting_default = True,
+)
+
+bool_flag(
+    name = "io_uring",
+    build_setting_default = True,
+)
+
+bool_flag(
+    name = "system_allocator",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "debug",
+    build_setting_default = False,
+)
+
+bool_flag(
+    name = "shuffle_task_queue",
+    build_setting_default = False,
+)
+
+int_flag(
+    name = "api_level",
+    build_setting_default = 9,
+    make_variable = "API_LEVEL",
+)
+
+int_flag(
+    name = "scheduling_groups",
+    build_setting_default = 16,
+    make_variable = "SCHEDULING_GROUPS",
+)
+
+config_setting(
+    name = "use_stack_guards",
+    flag_values = {
+        ":stack_guards": "true",
+    },
+)
+
+config_setting(
+    name = "use_sstring",
+    flag_values = {
+        ":sstring": "true",
+    },
+)
+
+config_setting(
+    name = "use_logger_compile_time_fmt",
+    flag_values = {
+        ":logger_compile_time_fmt": "true",
+    },
+)
+
+config_setting(
+    name = "use_task_backtrace",
+    flag_values = {
+        ":task_backtrace": "true",
+    },
+)
+
+config_setting(
+    name = "use_debug_allocations",
+    flag_values = {
+        ":debug_allocations": "true",
+    },
+)
+
+config_setting(
+    name = "use_io_uring",
+    flag_values = {
+        ":io_uring": "true",
+    },
+)
+
+config_setting(
+    name = "use_heap_profiling",
+    flag_values = {
+        ":heap_profiling": "true",
+    },
+)
+
+config_setting(
+    name = "use_system_allocator",
+    flag_values = {
+        ":system_allocator": "true",
+    },
+)
+
+config_setting(
+    name = "with_debug",
+    flag_values = {
+        ":debug": "true",
+    },
+)
+
+config_setting(
+    name = "with_shuffle_task_queue",
+    flag_values = {
+        ":shuffle_task_queue": "true",
+    },
+)
+
+py_binary(
+    name = "seastar-json2code",
+    srcs = ["scripts/seastar-json2code.py"],
+    visibility = ["//visibility:public"],
+)
+
+genrule(
+    name = "http_request_parser",
+    srcs = ["src/http/request_parser.rl"],
+    outs = ["include/seastar/http/request_parser.hh"],
+    cmd = "ragel -G2 -o $@ $(SRCS)",
+)
+
+genrule(
+    name = "http_response_parser",
+    srcs = ["src/http/response_parser.rl"],
+    outs = ["include/seastar/http/response_parser.hh"],
+    cmd = "ragel -G2 -o $@ $(SRCS)",
+)
+
+genrule(
+    name = "http_chunk_parsers",
+    srcs = ["src/http/chunk_parsers.rl"],
+    outs = ["include/seastar/http/chunk_parsers.hh"],
+    cmd = "ragel -G2 -o $@ $(SRCS)",
+)
+
+proto_library(
+    name = "metrics_proto",
+    srcs = ["src/proto/metrics2.proto"],
+    deps = ["@protobuf//:timestamp_proto"],
+)
+
+cc_proto_library(
+    name = "metrics_cc_proto",
+    deps = [":metrics_proto"],
+)
+
+cc_library(
+    name = "seastar",
+    srcs = [
+        "src/core/alien.cc",
+        "src/core/app-template.cc",
+        "src/core/cgroup.hh",
+        "src/core/condition-variable.cc",
+        "src/core/disk_params.cc",
+        "src/core/dpdk_rte.cc",
+        "src/core/exception_hacks.cc",
+        "src/core/execution_stage.cc",
+        "src/core/fair_queue.cc",
+        "src/core/file.cc",
+        "src/core/file-impl.hh",
+        "src/core/fsnotify.cc",
+        "src/core/fsqual.cc",
+        "src/core/fstream.cc",
+        "src/core/future.cc",
+        "src/core/future-util.cc",
+        "src/core/io_queue.cc",
+        "src/core/linux-aio.cc",
+        "src/core/memory.cc",
+        "src/core/metrics.cc",
+        "src/core/on_internal_error.cc",
+        "src/core/posix.cc",
+        "src/core/prefault.hh",
+        "src/core/program_options.cc",
+        "src/core/program_options.hh",
+        "src/core/prometheus.cc",
+        "src/core/prometheus-impl.hh",
+        "src/core/reactor.cc",
+        "src/core/reactor_backend.cc",
+        "src/core/reactor_backend.hh",
+        "src/core/resource.cc",
+        "src/core/scollectd.cc",
+        "src/core/scollectd-impl.hh",
+        "src/core/semaphore.cc",
+        "src/core/sharded.cc",
+        "src/core/signal.cc",
+        "src/core/smp.cc",
+        "src/core/sstring.cc",
+        "src/core/syscall_result.hh",
+        "src/core/syscall_work_queue.hh",
+        "src/core/systemwide_memory_barrier.cc",
+        "src/core/thread.cc",
+        "src/core/thread_pool.cc",
+        "src/core/thread_pool.hh",
+        "src/core/uname.cc",
+        "src/core/vla.hh",
+        "src/http/api_docs.cc",
+        "src/http/client.cc",
+        "src/http/common.cc",
+        "src/http/file_handler.cc",
+        "src/http/httpd.cc",
+        "src/http/json_path.cc",
+        "src/http/matcher.cc",
+        "src/http/mime_types.cc",
+        "src/http/reply.cc",
+        "src/http/request.cc",
+        "src/http/retry_strategy.cc",
+        "src/http/routes.cc",
+        "src/http/transformers.cc",
+        "src/http/url.cc",
+        "src/json/formatter.cc",
+        "src/json/json_elements.cc",
+        "src/net/arp.cc",
+        "src/net/config.cc",
+        "src/net/dhcp.cc",
+        "src/net/dns.cc",
+        "src/net/dpdk.cc",
+        "src/net/ethernet.cc",
+        "src/net/inet_address.cc",
+        "src/net/ip.cc",
+        "src/net/ip_checksum.cc",
+        "src/net/native-stack.cc",
+        "src/net/native-stack-impl.hh",
+        "src/net/net.cc",
+        "src/net/packet.cc",
+        "src/net/posix-stack.cc",
+        "src/net/proxy.cc",
+        "src/net/socket_address.cc",
+        "src/net/stack.cc",
+        "src/net/tcp.cc",
+        "src/net/tls.cc",
+        "src/net/udp.cc",
+        "src/net/unix_address.cc",
+        "src/net/virtio.cc",
+        "src/rpc/lz4_compressor.cc",
+        "src/rpc/lz4_fragmented_compressor.cc",
+        "src/rpc/rpc.cc",
+        "src/util/alloc_failure_injector.cc",
+        "src/util/backtrace.cc",
+        "src/util/conversions.cc",
+        "src/util/exceptions.cc",
+        "src/util/file.cc",
+        "src/util/log.cc",
+        "src/util/process.cc",
+        "src/util/program-options.cc",
+        "src/util/read_first_line.cc",
+        "src/util/short_streams.cc",
+        "src/util/tmp_file.cc",
+        "src/websocket/common.cc",
+        "src/websocket/parser.cc",
+        "src/websocket/server.cc",
+    ],
+    hdrs = [
+        "include/seastar/core/abort_on_ebadf.hh",
+        "include/seastar/core/abort_on_expiry.hh",
+        "include/seastar/core/abort_source.hh",
+        "include/seastar/core/abortable_fifo.hh",
+        "include/seastar/core/alien.hh",
+        "include/seastar/core/align.hh",
+        "include/seastar/core/aligned_buffer.hh",
+        "include/seastar/core/app-template.hh",
+        "include/seastar/core/bitops.hh",
+        "include/seastar/core/bitset-iter.hh",
+        "include/seastar/core/byteorder.hh",
+        "include/seastar/core/cacheline.hh",
+        "include/seastar/core/checked_ptr.hh",
+        "include/seastar/core/chunked_fifo.hh",
+        "include/seastar/core/circular_buffer.hh",
+        "include/seastar/core/circular_buffer_fixed_capacity.hh",
+        "include/seastar/core/condition-variable.hh",
+        "include/seastar/core/coroutine.hh",
+        "include/seastar/core/deleter.hh",
+        "include/seastar/core/disk_params.hh",
+        "include/seastar/core/distributed.hh",
+        "include/seastar/core/do_with.hh",
+        "include/seastar/core/dpdk_rte.hh",
+        "include/seastar/core/enum.hh",
+        "include/seastar/core/exception_hacks.hh",
+        "include/seastar/core/execution_stage.hh",
+        "include/seastar/core/expiring_fifo.hh",
+        "include/seastar/core/fair_queue.hh",
+        "include/seastar/core/file.hh",
+        "include/seastar/core/file-types.hh",
+        "include/seastar/core/format.hh",
+        "include/seastar/core/fsnotify.hh",
+        "include/seastar/core/fsqual.hh",
+        "include/seastar/core/fstream.hh",
+        "include/seastar/core/function_traits.hh",
+        "include/seastar/core/future.hh",
+        "include/seastar/core/future-util.hh",
+        "include/seastar/core/gate.hh",
+        "include/seastar/core/idle_cpu_handler.hh",
+        "include/seastar/core/internal/api-level.hh",
+        "include/seastar/core/internal/buffer_allocator.hh",
+        "include/seastar/core/internal/current_task.hh",
+        "include/seastar/core/internal/estimated_histogram.hh",
+        "include/seastar/core/internal/io_desc.hh",
+        "include/seastar/core/internal/io_intent.hh",
+        "include/seastar/core/internal/io_request.hh",
+        "include/seastar/core/internal/io_sink.hh",
+        "include/seastar/core/internal/linux-aio.hh",
+        "include/seastar/core/internal/poll.hh",
+        "include/seastar/core/internal/pollable_fd.hh",
+        "include/seastar/core/internal/run_in_background.hh",
+        "include/seastar/core/internal/stall_detector.hh",
+        "include/seastar/core/internal/systemwide_memory_barrier.hh",
+        "include/seastar/core/internal/uname.hh",
+        "include/seastar/core/io_intent.hh",
+        "include/seastar/core/io_priority_class.hh",
+        "include/seastar/core/io_queue.hh",
+        "include/seastar/core/iostream.hh",
+        "include/seastar/core/iostream-impl.hh",
+        "include/seastar/core/layered_file.hh",
+        "include/seastar/core/loop.hh",
+        "include/seastar/core/lowres_clock.hh",
+        "include/seastar/core/make_task.hh",
+        "include/seastar/core/manual_clock.hh",
+        "include/seastar/core/map_reduce.hh",
+        "include/seastar/core/memory.hh",
+        "include/seastar/core/metrics.hh",
+        "include/seastar/core/metrics_api.hh",
+        "include/seastar/core/metrics_registration.hh",
+        "include/seastar/core/metrics_types.hh",
+        "include/seastar/core/on_internal_error.hh",
+        "include/seastar/core/pipe.hh",
+        "include/seastar/core/polymorphic_temporary_buffer.hh",
+        "include/seastar/core/posix.hh",
+        "include/seastar/core/preempt.hh",
+        "include/seastar/core/prefetch.hh",
+        "include/seastar/core/print.hh",
+        "include/seastar/core/prometheus.hh",
+        "include/seastar/core/queue.hh",
+        "include/seastar/core/ragel.hh",
+        "include/seastar/core/reactor.hh",
+        "include/seastar/core/reactor_config.hh",
+        "include/seastar/core/relabel_config.hh",
+        "include/seastar/core/report_exception.hh",
+        "include/seastar/core/resource.hh",
+        "include/seastar/core/rwlock.hh",
+        "include/seastar/core/scattered_message.hh",
+        "include/seastar/core/scheduling.hh",
+        "include/seastar/core/scheduling_specific.hh",
+        "include/seastar/core/scollectd.hh",
+        "include/seastar/core/scollectd_api.hh",
+        "include/seastar/core/seastar.hh",
+        "include/seastar/core/semaphore.hh",
+        "include/seastar/core/shard_id.hh",
+        "include/seastar/core/sharded.hh",
+        "include/seastar/core/shared_future.hh",
+        "include/seastar/core/shared_mutex.hh",
+        "include/seastar/core/shared_ptr.hh",
+        "include/seastar/core/shared_ptr_debug_helper.hh",
+        "include/seastar/core/shared_ptr_incomplete.hh",
+        "include/seastar/core/signal.hh",
+        "include/seastar/core/simple-stream.hh",
+        "include/seastar/core/slab.hh",
+        "include/seastar/core/sleep.hh",
+        "include/seastar/core/smp.hh",
+        "include/seastar/core/smp_options.hh",
+        "include/seastar/core/sstring.hh",
+        "include/seastar/core/stall_sampler.hh",
+        "include/seastar/core/stream.hh",
+        "include/seastar/core/task.hh",
+        "include/seastar/core/temporary_buffer.hh",
+        "include/seastar/core/thread.hh",
+        "include/seastar/core/thread_cputime_clock.hh",
+        "include/seastar/core/thread_impl.hh",
+        "include/seastar/core/timed_out_error.hh",
+        "include/seastar/core/timer.hh",
+        "include/seastar/core/timer-set.hh",
+        "include/seastar/core/transfer.hh",
+        "include/seastar/core/unaligned.hh",
+        "include/seastar/core/units.hh",
+        "include/seastar/core/vector-data-sink.hh",
+        "include/seastar/core/weak_ptr.hh",
+        "include/seastar/core/when_all.hh",
+        "include/seastar/core/when_any.hh",
+        "include/seastar/core/with_scheduling_group.hh",
+        "include/seastar/core/with_timeout.hh",
+        "include/seastar/coroutine/all.hh",
+        "include/seastar/coroutine/as_future.hh",
+        "include/seastar/coroutine/exception.hh",
+        "include/seastar/coroutine/generator.hh",
+        "include/seastar/coroutine/maybe_yield.hh",
+        "include/seastar/coroutine/parallel_for_each.hh",
+        "include/seastar/coroutine/switch_to.hh",
+        "include/seastar/coroutine/try_future.hh",
+        "include/seastar/http/api_docs.hh",
+        "include/seastar/http/chunk_parsers.hh",
+        "include/seastar/http/client.hh",
+        "include/seastar/http/common.hh",
+        "include/seastar/http/connection_factory.hh",
+        "include/seastar/http/exception.hh",
+        "include/seastar/http/file_handler.hh",
+        "include/seastar/http/function_handlers.hh",
+        "include/seastar/http/handlers.hh",
+        "include/seastar/http/httpd.hh",
+        "include/seastar/http/internal/content_source.hh",
+        "include/seastar/http/json_path.hh",
+        "include/seastar/http/matcher.hh",
+        "include/seastar/http/matchrules.hh",
+        "include/seastar/http/mime_types.hh",
+        "include/seastar/http/reply.hh",
+        "include/seastar/http/request.hh",
+        "include/seastar/http/request_parser.hh",
+        "include/seastar/http/response_parser.hh",
+        "include/seastar/http/retry_strategy.hh",
+        "include/seastar/http/routes.hh",
+        "include/seastar/http/short_streams.hh",
+        "include/seastar/http/transformers.hh",
+        "include/seastar/http/types.hh",
+        "include/seastar/http/url.hh",
+        "include/seastar/json/formatter.hh",
+        "include/seastar/json/json_elements.hh",
+        "include/seastar/net/api.hh",
+        "include/seastar/net/arp.hh",
+        "include/seastar/net/byteorder.hh",
+        "include/seastar/net/config.hh",
+        "include/seastar/net/const.hh",
+        "include/seastar/net/dhcp.hh",
+        "include/seastar/net/dns.hh",
+        "include/seastar/net/dpdk.hh",
+        "include/seastar/net/ethernet.hh",
+        "include/seastar/net/inet_address.hh",
+        "include/seastar/net/ip.hh",
+        "include/seastar/net/ip_checksum.hh",
+        "include/seastar/net/ipv4_address.hh",
+        "include/seastar/net/ipv6_address.hh",
+        "include/seastar/net/native-stack.hh",
+        "include/seastar/net/net.hh",
+        "include/seastar/net/packet.hh",
+        "include/seastar/net/packet-data-source.hh",
+        "include/seastar/net/packet-util.hh",
+        "include/seastar/net/posix-stack.hh",
+        "include/seastar/net/proxy.hh",
+        "include/seastar/net/socket_defs.hh",
+        "include/seastar/net/stack.hh",
+        "include/seastar/net/tcp.hh",
+        "include/seastar/net/tcp-stack.hh",
+        "include/seastar/net/tls.hh",
+        "include/seastar/net/toeplitz.hh",
+        "include/seastar/net/udp.hh",
+        "include/seastar/net/unix_address.hh",
+        "include/seastar/net/virtio.hh",
+        "include/seastar/net/virtio-interface.hh",
+        "include/seastar/rpc/lz4_compressor.hh",
+        "include/seastar/rpc/lz4_fragmented_compressor.hh",
+        "include/seastar/rpc/multi_algo_compressor_factory.hh",
+        "include/seastar/rpc/rpc.hh",
+        "include/seastar/rpc/rpc_impl.hh",
+        "include/seastar/rpc/rpc_types.hh",
+        "include/seastar/util/alloc_failure_injector.hh",
+        "include/seastar/util/assert.hh",
+        "include/seastar/util/backtrace.hh",
+        "include/seastar/util/bool_class.hh",
+        "include/seastar/util/closeable.hh",
+        "include/seastar/util/conversions.hh",
+        "include/seastar/util/critical_alloc_section.hh",
+        "include/seastar/util/defer.hh",
+        "include/seastar/util/eclipse.hh",
+        "include/seastar/util/exceptions.hh",
+        "include/seastar/util/file.hh",
+        "include/seastar/util/function_input_iterator.hh",
+        "include/seastar/util/indirect.hh",
+        "include/seastar/util/integrated-length.hh",
+        "include/seastar/util/internal/array_map.hh",
+        "include/seastar/util/internal/iovec_utils.hh",
+        "include/seastar/util/internal/magic.hh",
+        "include/seastar/util/iostream.hh",
+        "include/seastar/util/is_smart_ptr.hh",
+        "include/seastar/util/later.hh",
+        "include/seastar/util/lazy.hh",
+        "include/seastar/util/log.hh",
+        "include/seastar/util/log-cli.hh",
+        "include/seastar/util/log-impl.hh",
+        "include/seastar/util/log-level.hh",
+        "include/seastar/util/memory-data-sink.hh",
+        "include/seastar/util/memory-data-source.hh",
+        "include/seastar/util/memory_diagnostics.hh",
+        "include/seastar/util/noncopyable_function.hh",
+        "include/seastar/util/optimized_optional.hh",
+        "include/seastar/util/print_safe.hh",
+        "include/seastar/util/process.hh",
+        "include/seastar/util/program-options.hh",
+        "include/seastar/util/read_first_line.hh",
+        "include/seastar/util/reference_wrapper.hh",
+        "include/seastar/util/sampler.hh",
+        "include/seastar/util/shared_token_bucket.hh",
+        "include/seastar/util/short_streams.hh",
+        "include/seastar/util/spinlock.hh",
+        "include/seastar/util/std-compat.hh",
+        "include/seastar/util/string_utils.hh",
+        "include/seastar/util/tmp_file.hh",
+        "include/seastar/util/transform_iterator.hh",
+        "include/seastar/util/tuple_utils.hh",
+        "include/seastar/util/used_size.hh",
+        "include/seastar/util/variant_utils.hh",
+        "include/seastar/websocket/common.hh",
+        "include/seastar/websocket/parser.hh",
+        "include/seastar/websocket/server.hh",
+    ],
+    copts = [
+        "-Wno-unused-variable",
+        "-Wno-unused-result",
+        "-Wno-unused-but-set-variable",
+        # Prevent TLS/malloc recursion when linked as a shared library.
+        # Seastar overrides malloc/free, which access thread_local variables.
+        # With the default global-dynamic TLS model, __tls_get_addr may call
+        # free(), causing infinite recursion. initial-exec places TLS in the
+        # static TLS block, bypassing __tls_get_addr entirely.
+        "-ftls-model=initial-exec",
+        "-fno-semantic-interposition",
+    ] + select({
+        ":use_stack_guards": ["-fstack-clash-protection"],
+        "//conditions:default": [],
+    }),
+    defines = [
+        "BOOST_TEST_ALTERNATIVE_INIT_API",
+        "BOOST_TEST_NO_LIB",
+        "SEASTAR_API_LEVEL=$(API_LEVEL)",
+        "SEASTAR_HAS_MEMBARRIER",
+        "SEASTAR_SCHEDULING_GROUPS_COUNT=$(SCHEDULING_GROUPS)",
+        "SEASTAR_DEPRECATED_OSTREAM_FORMATTERS",
+    ] + select({
+        ":use_task_backtrace": ["SEASTAR_TASK_BACKTRACE"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_sstring": ["SEASTAR_SSTRING"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_logger_compile_time_fmt": ["SEASTAR_LOGGER_COMPILE_TIME_FMT"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_system_allocator": ["SEASTAR_DEFAULT_ALLOCATOR"],
+        "//conditions:default": [],
+    }) + select({
+        ":with_debug": [
+            "SEASTAR_DEBUG",
+            "SEASTAR_DEBUG_PROMISE",
+            "SEASTAR_DEBUG_SHARED_PTR",
+            "SEASTAR_TYPE_ERASE_MORE",
+        ],
+        "//conditions:default": [],
+    }),
+    includes = [
+        "include",
+        "src",
+    ],
+    linkopts = [
+        "-lhwloc",
+        "-lgnutls",
+    ],
+    local_defines = [
+        "SEASTAR_HAVE_HWLOC",
+        "SEASTAR_DEFERRED_ACTION_REQUIRE_NOEXCEPT",
+        "SEASTAR_HAVE_ASAN_FIBER_SUPPORT",
+    ] + select({
+        ":use_debug_allocations": ["SEASTAR_DEBUG_ALLOCATIONS"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_io_uring": ["SEASTAR_HAVE_URING"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_heap_profiling": ["SEASTAR_HEAPPROF"],
+        "//conditions:default": [],
+    }) + select({
+        ":with_shuffle_task_queue": ["SEASTAR_SHUFFLE_TASK_QUEUE"],
+        "//conditions:default": [],
+    }) + select({
+        ":use_stack_guards": ["SEASTAR_THREAD_STACK_GUARDS"],
+        "//conditions:default": [],
+    }),
+    toolchains = [
+        ":api_level",
+        ":scheduling_groups",
+    ],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":metrics_cc_proto",
+        "@boost.algorithm",
+        "@boost.asio",
+        "@boost.endian",
+        "@boost.intrusive",
+        "@boost.lockfree",
+        "@boost.program_options",
+        "@c-ares//:ares",
+        "@fmt",
+        "@lz4",
+        "@protobuf",
+        "@yaml-cpp",
+    ] + select({
+        ":use_io_uring": ["@liburing"],
+        "//conditions:default": [],
+    }),
+)
+
+cc_binary(
+    name = "iotune",
+    srcs = [
+        "apps/iotune/iotune.cc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@boost.program_options",
+        "@boost.range",
+        "@fmt",
+        "@yaml-cpp",
+    ],
+)
+
+cc_library(
+    name = "testing",
+    testonly = True,
+    srcs = [
+        "src/testing/boost_unit_test_main.cc",
+        "src/testing/entry_point.cc",
+        "src/testing/random.cc",
+        "src/testing/seastar_test.cc",
+        "src/testing/test_runner.cc",
+    ],
+    hdrs = [
+        "include/seastar/testing/entry_point.hh",
+        "include/seastar/testing/exchanger.hh",
+        "include/seastar/testing/on_internal_error.hh",
+        "include/seastar/testing/random.hh",
+        "include/seastar/testing/seastar_test.hh",
+        "include/seastar/testing/test_case.hh",
+        "include/seastar/testing/test_fixture.hh",
+        "include/seastar/testing/test_runner.hh",
+        "include/seastar/testing/thread_test_case.hh",
+    ],
+    includes = [
+        "include",
+    ],
+    linkstatic = True,
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":seastar",
+        "@boost.test",
+    ],
+)
+
+cc_library(
+    name = "perf_testing",
+    testonly = True,
+    srcs = [
+        "tests/perf/linux_perf_event.cc",
+        "tests/perf/perf_tests.cc",
+    ],
+    hdrs = [
+        "include/seastar/testing/linux_perf_event.hh",
+        "include/seastar/testing/perf_tests.hh",
+    ],
+    includes = [
+        "include",
+        "src",
+        "tests/perf",
+    ],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        ":seastar",
+        ":testing",
+    ],
+)
+
+# --------------------------------------------------------------------------
+# Code generation rules for apps
+# --------------------------------------------------------------------------
+
+genrule(
+    name = "httpd_swagger",
+    srcs = ["apps/httpd/demo.json"],
+    outs = [
+        "apps/httpd/demo.json.hh",
+        "apps/httpd/demo.json.cc",
+    ],
+    cmd = "$(location :seastar-json2code) --create-cc -f $(location apps/httpd/demo.json) -o $(location apps/httpd/demo.json.hh)",
+    tools = [":seastar-json2code"],
+)
+
+genrule(
+    name = "memcached_ascii_parser",
+    srcs = ["apps/memcached/ascii.rl"],
+    outs = ["apps/memcached/ascii.hh"],
+    cmd = "ragel -G2 -o $@ $(SRCS)",
+)
+
+# --------------------------------------------------------------------------
+# Application binaries
+# --------------------------------------------------------------------------
+
+cc_binary(
+    name = "httpd",
+    srcs = [
+        "apps/httpd/main.cc",
+        "apps/lib/stop_signal.hh",
+        ":httpd_swagger",
+    ],
+    copts = ["-Iapps/httpd"],
+    includes = ["apps/httpd"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@boost.program_options",
+    ],
+)
+
+cc_binary(
+    name = "io_tester",
+    srcs = [
+        "apps/io_tester/io_tester.cc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@boost.program_options",
+        "@fmt",
+        "@yaml-cpp",
+    ],
+)
+
+cc_binary(
+    name = "ioinfo",
+    srcs = [
+        "apps/io_tester/ioinfo.cc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@yaml-cpp",
+    ],
+)
+
+cc_binary(
+    name = "rpc_tester",
+    srcs = [
+        "apps/rpc_tester/rpc_tester.cc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@boost.program_options",
+        "@fmt",
+        "@yaml-cpp",
+    ],
+)
+
+cc_binary(
+    name = "memcached",
+    srcs = [
+        "apps/memcached/memcache.cc",
+        "apps/memcached/memcached.hh",
+        ":memcached_ascii_parser",
+    ],
+    copts = ["-Iapps/memcached"],
+    includes = ["apps/memcached"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@boost.program_options",
+    ],
+)
+
+cc_binary(
+    name = "seawreck",
+    srcs = [
+        "apps/seawreck/seawreck.cc",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":seastar",
+        "@boost.program_options",
+    ],
+)
+
+# --------------------------------------------------------------------------
+# Demo binaries
+# --------------------------------------------------------------------------
+
+cc_binary(
+    name = "block_discard_demo",
+    srcs = ["demos/block_discard_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "coroutines_demo",
+    srcs = ["demos/coroutines_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "echo_demo",
+    srcs = ["demos/echo_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "file_demo",
+    srcs = ["demos/file_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "hello_world_demo",
+    srcs = ["demos/hello-world.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "http_client_demo",
+    srcs = ["demos/http_client_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "ip_demo",
+    srcs = ["demos/ip_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "l3_demo",
+    srcs = ["demos/l3_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "line_count_demo",
+    srcs = ["demos/line_count_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "rpc_demo",
+    srcs = ["demos/rpc_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "scheduling_group_demo",
+    srcs = ["demos/scheduling_group_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "sharded_parameter_demo",
+    srcs = ["demos/sharded_parameter_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "tcp_demo",
+    srcs = ["demos/tcp_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "tcp_sctp_client_demo",
+    srcs = ["demos/tcp_sctp_client_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "tcp_sctp_server_demo",
+    srcs = [
+        "apps/lib/stop_signal.hh",
+        "demos/tcp_sctp_server_demo.cc",
+    ],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "tls_echo_server_demo",
+    srcs = [
+        "apps/lib/stop_signal.hh",
+        "demos/tls_echo_server.hh",
+        "demos/tls_echo_server_demo.cc",
+    ],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "tls_simple_client_demo",
+    srcs = [
+        "demos/tls_echo_server.hh",
+        "demos/tls_simple_client_demo.cc",
+    ],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "tutorial_examples_demo",
+    srcs = ["demos/tutorial_examples.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "udp_client_demo",
+    srcs = ["demos/udp_client_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "udp_server_demo",
+    srcs = [
+        "apps/lib/stop_signal.hh",
+        "demos/udp_server_demo.cc",
+    ],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "udp_zero_copy_demo",
+    srcs = ["demos/udp_zero_copy_demo.cc"],
+    deps = [":seastar"],
+)
+
+cc_binary(
+    name = "websocket_server_demo",
+    srcs = ["demos/websocket_server_demo.cc"],
+    deps = [":seastar"],
+)
+
+# --------------------------------------------------------------------------
+# TLS test certificate generation
+# --------------------------------------------------------------------------
+
+# Generate a self-signed CA and server certificate for testing.
+# Mirrors CMake's seastar_add_certgen() function.
+genrule(
+    name = "testcrt_gen",
+    outs = [
+        "test.crt",
+        "test.crt.der",
+        "test.key",
+        "catest.pem",
+        "catest.key",
+    ],
+    cmd = """
+        set -e
+        DOMAIN=scylladb.org
+        SERVER=test
+        COMMON=$$SERVER.$$DOMAIN
+        # Generate CA key and self-signed cert
+        openssl genpkey -quiet -out $(location catest.key) -algorithm RSA -pkeyopt rsa_keygen_bits:4096
+        openssl req -x509 -new -nodes -key $(location catest.key) -days 3650 \
+            -out $(location catest.pem) \
+            -subj "/C=SE/ST=Stockholm/L=Stockholm/O=$$DOMAIN/OU=$$DOMAIN/CN=$$COMMON"
+        # Generate server key and CSR
+        openssl genpkey -quiet -out $(location test.key) -algorithm RSA -pkeyopt rsa_keygen_bits:4096
+        openssl req -new -key $(location test.key) -out test.csr \
+            -subj "/C=SE/ST=Stockholm/L=Stockholm/O=$$DOMAIN/OU=$$DOMAIN/CN=$$COMMON" \
+            -addext "subjectAltName=email:alt1@$$DOMAIN,email:alt2@$$DOMAIN,IP:127.0.0.1,DNS:$$COMMON"
+        # Sign server cert with CA
+        openssl x509 -req -in test.csr -CA $(location catest.pem) -CAkey $(location catest.key) \
+            -CAcreateserial -out $(location test.crt) -days 3650 \
+            -copy_extensions copy
+        # DER format
+        openssl x509 -in $(location test.crt) -out $(location test.crt.der) -outform der
+        # Make cert files writable (tests may copy them)
+        chmod 644 $(location test.crt) $(location test.key) $(location catest.pem)
+    """,
+)
+
+genrule(
+    name = "othercrt_gen",
+    outs = [
+        "other.crt",
+        "other.crt.der",
+        "other.key",
+        "caother.pem",
+        "caother.key",
+    ],
+    cmd = """
+        set -e
+        DOMAIN=apa.org
+        SERVER=other
+        COMMON=$$SERVER.$$DOMAIN
+        openssl genpkey -quiet -out $(location caother.key) -algorithm RSA -pkeyopt rsa_keygen_bits:4096
+        openssl req -x509 -new -nodes -key $(location caother.key) -days 3650 \
+            -out $(location caother.pem) \
+            -subj "/C=SE/ST=Stockholm/L=Stockholm/O=$$DOMAIN/OU=$$DOMAIN/CN=$$COMMON"
+        openssl genpkey -quiet -out $(location other.key) -algorithm RSA -pkeyopt rsa_keygen_bits:4096
+        openssl req -new -key $(location other.key) -out other.csr \
+            -subj "/C=SE/ST=Stockholm/L=Stockholm/O=$$DOMAIN/OU=$$DOMAIN/CN=$$COMMON" \
+            -addext "subjectAltName=email:alt1@$$DOMAIN,email:alt2@$$DOMAIN,IP:127.0.0.1,DNS:$$COMMON"
+        openssl x509 -req -in other.csr -CA $(location caother.pem) -CAkey $(location caother.key) \
+            -CAcreateserial -out $(location other.crt) -days 3650 \
+            -copy_extensions copy
+        openssl x509 -in $(location other.crt) -out $(location other.crt.der) -outform der
+        chmod 644 $(location other.crt) $(location other.key) $(location caother.pem)
+    """,
+)
+
+# Mutual TLS certificates: CA + server + 2 client certs.
+# Mirrors CMake's seastar_gen_mtls_certs() function.
+genrule(
+    name = "mtls_certs_gen",
+    outs = [
+        "mtls_ca.crt",
+        "mtls_ca.key",
+        "mtls_server.crt",
+        "mtls_server.key",
+        "mtls_client1.crt",
+        "mtls_client1.key",
+        "mtls_client2.crt",
+        "mtls_client2.key",
+    ],
+    cmd = """
+        set -e
+        EXT="subjectAltName = IP:127.0.0.1"
+        # CA
+        openssl ecparam -name prime256v1 -genkey -noout -out $(location mtls_ca.key)
+        openssl req -new -x509 -sha256 -key $(location mtls_ca.key) \
+            -out $(location mtls_ca.crt) \
+            -subj "/C=GB/ST=London/L=London/O=Redpanda Data/OU=Core/CN=redpanda.com" \
+            -addext "$$EXT"
+        # Server
+        openssl ecparam -name prime256v1 -genkey -noout -out $(location mtls_server.key)
+        openssl req -new -sha256 -key $(location mtls_server.key) -out mtls_server.csr \
+            -subj "/C=GB/ST=London/L=London/O=Redpanda Data/OU=Core/CN=redpanda.com"
+        openssl x509 -req -days 1000 -sha256 -set_serial 1 \
+            -in mtls_server.csr -CA $(location mtls_ca.crt) -CAkey $(location mtls_ca.key) \
+            -out $(location mtls_server.crt)
+        # Client 1
+        openssl ecparam -name prime256v1 -genkey -noout -out $(location mtls_client1.key)
+        openssl req -new -sha256 -key $(location mtls_client1.key) -out mtls_client1.csr \
+            -subj "/C=GB/ST=London/L=London/O=Redpanda Data/OU=Core/CN=client1.org"
+        openssl x509 -req -days 1000 -sha256 -set_serial 2 \
+            -in mtls_client1.csr -CA $(location mtls_ca.crt) -CAkey $(location mtls_ca.key) \
+            -out $(location mtls_client1.crt)
+        # Client 2
+        openssl ecparam -name prime256v1 -genkey -noout -out $(location mtls_client2.key)
+        openssl req -new -sha256 -key $(location mtls_client2.key) -out mtls_client2.csr \
+            -subj "/C=GB/ST=London/L=London/O=Redpanda Data/OU=Core/CN=client2.org"
+        openssl x509 -req -days 1000 -sha256 -set_serial 3 \
+            -in mtls_client2.csr -CA $(location mtls_ca.crt) -CAkey $(location mtls_ca.key) \
+            -out $(location mtls_client2.crt)
+        chmod 644 $(location mtls_ca.crt) $(location mtls_ca.key) \
+            $(location mtls_server.crt) $(location mtls_server.key) \
+            $(location mtls_client1.crt) $(location mtls_client1.key) \
+            $(location mtls_client2.crt) $(location mtls_client2.key)
+    """,
+)
+
+# Copy static TLS test data files so they are co-located with the test binary
+# (tls_test locates files via boost::dll::program_location().parent_path()).
+genrule(
+    name = "tls_test_data",
+    srcs = [
+        "tests/unit/tls-ca-bundle.pem",
+        "tests/unit/https-server.py",
+    ],
+    outs = [
+        "tls-ca-bundle.pem",
+        "https-server.py",
+    ],
+    cmd = "cp $(location tests/unit/tls-ca-bundle.pem) $(location tls-ca-bundle.pem) && " +
+          "cp $(location tests/unit/https-server.py) $(location https-server.py)",
+)
+
+# --------------------------------------------------------------------------
+# Unit tests
+# --------------------------------------------------------------------------
+
+# Common defines for tests that use the seastar testing framework.
+_SEASTAR_TEST_DEFINES = [
+    "SEASTAR_TESTING_MAIN",
+    "SEASTAR_TESTING_WITH_NETWORKING=1",
+]
+
+# Common include paths for unit tests.
+_TEST_INCLUDES = [
+    "tests/unit",
+    "src",
+]
+
+# Standard arguments for SEASTAR kind tests. Matches CMake's test invocation
+# which passes "-- -c 2" to limit the test to 2 SMP cores.
+_SEASTAR_TEST_ARGS = [
+    "--",
+    "-c",
+    "2",
+]
+
+# Args for perf tests. Perf tests use app_template directly (not Boost.Test),
+# so they don't need the "--" separator that SEASTAR kind tests require.
+_PERF_TEST_ARGS = [
+    "-c",
+    "2",
+]
+
+# Environment variables for test execution, matching CMake's test setup.
+_SEASTAR_TEST_ENV = {
+    "BOOST_TEST_CATCH_SYSTEM_ERRORS": "no",
+}
+
+# Dependencies for BOOST kind tests (use Boost.Test's main entry point).
+_BOOST_TEST_DEPS = [
+    ":seastar",
+    "@boost.test",
+    "@boost.test//:unit_test_main",
+]
+
+cc_test(
+    name = "abort_source_test",
+    srcs = ["tests/unit/abort_source_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "alloc_test",
+    srcs = ["tests/unit/alloc_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "allocator_test",
+    srcs = ["tests/unit/allocator_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "alien_test",
+    srcs = ["tests/unit/alien_test.cc"],
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":seastar",
+    ],
+)
+
+cc_test(
+    name = "checked_ptr_test",
+    srcs = ["tests/unit/checked_ptr_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "temporary_buffer_test",
+    srcs = ["tests/unit/temporary_buffer_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "chunked_fifo_test",
+    srcs = ["tests/unit/chunked_fifo_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "chunk_parsers_test",
+    srcs = ["tests/unit/chunk_parsers_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "circular_buffer_test",
+    srcs = ["tests/unit/circular_buffer_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "circular_buffer_fixed_capacity_test",
+    srcs = ["tests/unit/circular_buffer_fixed_capacity_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "condition_variable_test",
+    srcs = ["tests/unit/condition_variable_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "connect_test",
+    srcs = ["tests/unit/connect_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "content_source_test",
+    srcs = ["tests/unit/content_source_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "coroutines_test",
+    srcs = [
+        "tests/unit/coroutines_test.cc",
+        "tests/unit/tl-generator.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "generator_test",
+    srcs = [
+        "tests/unit/generator_test.cc",
+        "tests/unit/tl-generator.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "defer_test",
+    srcs = ["tests/unit/defer_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "deleter_test",
+    srcs = ["tests/unit/deleter_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "directory_test",
+    srcs = ["tests/unit/directory_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    tags = ["no-sandbox"],
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "distributed_test",
+    srcs = ["tests/unit/distributed_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "dns_test",
+    srcs = ["tests/unit/dns_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "execution_stage_test",
+    srcs = ["tests/unit/execution_stage_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "expiring_fifo_test",
+    srcs = ["tests/unit/expiring_fifo_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "abortable_fifo_test",
+    srcs = ["tests/unit/abortable_fifo_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "io_queue_test",
+    srcs = ["tests/unit/io_queue_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "fair_queue_test",
+    srcs = ["tests/unit/fair_queue_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "file_io_test",
+    srcs = ["tests/unit/file_io_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "file_utils_test",
+    srcs = [
+        "tests/unit/expected_exception.hh",
+        "tests/unit/file_utils_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "foreign_ptr_test",
+    srcs = ["tests/unit/foreign_ptr_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "fsnotifier_test",
+    srcs = [
+        "tests/unit/fsnotifier_test.cc",
+        "tests/unit/tmpdir.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "fstream_test",
+    srcs = [
+        "tests/unit/fstream_test.cc",
+        "tests/unit/mock_file.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "futures_test",
+    srcs = [
+        "tests/unit/expected_exception.hh",
+        "tests/unit/futures_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "sharded_test",
+    srcs = ["tests/unit/sharded_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "httpd_test",
+    srcs = [
+        "tests/unit/httpd_test.cc",
+        "tests/unit/loopback_socket.hh",
+        "tests/unit/memory-data-sink.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "websocket_test",
+    srcs = [
+        "tests/unit/loopback_socket.hh",
+        "tests/unit/websocket_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "ipv6_test",
+    srcs = ["tests/unit/ipv6_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "network_interface_test",
+    srcs = ["tests/unit/network_interface_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "json_formatter_test",
+    srcs = [
+        "tests/unit/json_formatter_test.cc",
+        "tests/unit/memory-data-sink.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "libc_wrapper_test",
+    srcs = ["tests/unit/libc_wrapper_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "locking_test",
+    srcs = ["tests/unit/locking_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "lowres_clock_test",
+    srcs = ["tests/unit/lowres_clock_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "metrics_test",
+    srcs = ["tests/unit/metrics_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "net_config_test",
+    srcs = ["tests/unit/net_config_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "noncopyable_function_test",
+    srcs = ["tests/unit/noncopyable_function_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "output_stream_test",
+    srcs = [
+        "tests/unit/memory-data-sink.hh",
+        "tests/unit/output_stream_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "packet_test",
+    srcs = ["tests/unit/packet_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "program_options_test",
+    srcs = ["tests/unit/program_options_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "proxy_protocol_test",
+    srcs = ["tests/unit/proxy_protocol_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "queue_test",
+    srcs = ["tests/unit/queue_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "request_parser_test",
+    srcs = ["tests/unit/request_parser_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "rpc_test",
+    size = "large",
+    srcs = [
+        "tests/unit/loopback_socket.hh",
+        "tests/unit/rpc_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "semaphore_test",
+    srcs = [
+        "tests/unit/expected_exception.hh",
+        "tests/unit/semaphore_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "shared_ptr_test",
+    srcs = ["tests/unit/shared_ptr_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "signal_test",
+    srcs = ["tests/unit/signal_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "simple_stream_test",
+    srcs = ["tests/unit/simple_stream_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "slab_test",
+    srcs = ["tests/unit/slab_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "smp_test",
+    srcs = ["tests/unit/smp_test.cc"],
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":seastar",
+    ],
+)
+
+cc_test(
+    name = "app_template_test",
+    srcs = ["tests/unit/app-template_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "socket_test",
+    srcs = ["tests/unit/socket_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "epoll_test",
+    srcs = ["tests/unit/epoll_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "sstring_test",
+    srcs = ["tests/unit/sstring_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "stall_detector_test",
+    srcs = ["tests/unit/stall_detector_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "stream_reader_test",
+    srcs = ["tests/unit/stream_reader_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "thread_test",
+    srcs = ["tests/unit/thread_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "scheduling_group_test",
+    srcs = ["tests/unit/scheduling_group_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "scheduling_group_nesting_test",
+    size = "large",
+    srcs = ["tests/unit/scheduling_group_nesting_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    tags = ["flaky"],
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "timer_test",
+    srcs = ["tests/unit/timer_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "uname_test",
+    srcs = ["tests/unit/uname_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "source_location_test",
+    srcs = ["tests/unit/source_location_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "shared_token_bucket_test",
+    srcs = ["tests/unit/shared_token_bucket_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "prometheus_text_test",
+    srcs = [
+        "tests/unit/memory-data-sink.hh",
+        "tests/unit/prometheus_text_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "prometheus_http_test",
+    srcs = [
+        "tests/unit/loopback_socket.hh",
+        "tests/unit/prometheus_http_test.cc",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "tls_test",
+    srcs = [
+        "tests/unit/loopback_socket.hh",
+        "tests/unit/tls_test.cc",
+        "tests/unit/tmpdir.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    data = [
+        ":mtls_certs_gen",
+        ":othercrt_gen",
+        ":testcrt_gen",
+        ":tls_test_data",
+    ],
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+        "@boost.filesystem",
+    ],
+)
+
+cc_test(
+    name = "tuple_utils_test",
+    srcs = ["tests/unit/tuple_utils_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "unix_domain_test",
+    srcs = ["tests/unit/unix_domain_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "unwind_test",
+    srcs = ["tests/unit/unwind_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "weak_ptr_test",
+    srcs = ["tests/unit/weak_ptr_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "log_buf_test",
+    srcs = ["tests/unit/log_buf_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "exception_logging_test",
+    srcs = ["tests/unit/exception_logging_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "closeable_test",
+    srcs = [
+        "tests/unit/closeable_test.cc",
+        "tests/unit/expected_exception.hh",
+    ],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "pipe_test",
+    srcs = ["tests/unit/pipe_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "spawn_test",
+    srcs = ["tests/unit/spawn_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "variant_utils_test",
+    srcs = ["tests/unit/variant_utils_test.cc"],
+    defines = _SEASTAR_TEST_DEFINES,
+    includes = _TEST_INCLUDES,
+    deps = _BOOST_TEST_DEPS,
+)
+
+cc_test(
+    name = "gate_test",
+    srcs = ["tests/unit/gate_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+cc_test(
+    name = "test_fixture_test",
+    srcs = ["tests/unit/test_fixture_test.cc"],
+    args = _SEASTAR_TEST_ARGS,
+    defines = _SEASTAR_TEST_DEFINES,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":testing",
+    ],
+)
+
+# --------------------------------------------------------------------------
+# Performance tests
+# --------------------------------------------------------------------------
+
+cc_test(
+    name = "fstream_perf",
+    srcs = ["tests/perf/fstream_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":seastar",
+    ],
+)
+
+cc_test(
+    name = "fair_queue_perf",
+    srcs = ["tests/perf/fair_queue_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "shared_token_bucket_perf",
+    srcs = ["tests/perf/shared_token_bucket.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "future_util_perf",
+    srcs = ["tests/perf/future_util_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    tags = ["flaky"],
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "rpc_perf",
+    srcs = ["tests/perf/rpc_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "smp_submit_to_perf",
+    srcs = ["tests/perf/smp_submit_to_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":seastar",
+    ],
+)
+
+cc_test(
+    name = "thread_context_switch_perf",
+    srcs = ["tests/perf/thread_context_switch_test.cc"],
+    args = _PERF_TEST_ARGS,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":seastar",
+    ],
+)
+
+cc_test(
+    name = "coroutine_perf",
+    srcs = ["tests/perf/coroutine_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "allocator_perf",
+    srcs = ["tests/perf/allocator_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "container_perf",
+    srcs = ["tests/perf/container_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "http_client_perf",
+    srcs = [
+        "include/seastar/testing/linux_perf_event.hh",
+        "tests/perf/http_client_perf.cc",
+        "tests/perf/linux_perf_event.cc",
+        "tests/unit/loopback_socket.hh",
+    ],
+    args = _PERF_TEST_ARGS,
+    includes = _TEST_INCLUDES + ["include"],
+    deps = [
+        ":seastar",
+    ],
+)
+
+cc_test(
+    name = "perf_tests_perf",
+    srcs = ["tests/perf/perf_tests_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)
+
+cc_test(
+    name = "metrics_perf",
+    size = "large",
+    srcs = ["tests/perf/metrics_perf.cc"],
+    args = _PERF_TEST_ARGS,
+    env = _SEASTAR_TEST_ENV,
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":perf_testing",
+    ],
+)

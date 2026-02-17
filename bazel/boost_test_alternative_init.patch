@@ -1,0 +1,9 @@
+--- a/BUILD.bazel
++++ b/BUILD.bazel
+@@ -47,5 +47,6 @@
+     ]),
+     defines = [
+         "BOOST_TEST_NO_LIB",
++        "BOOST_TEST_ALTERNATIVE_INIT_API",
+     ],
+     includes = ["include"],
