@@ -20,6 +20,9 @@
  */
 
 #include "crypto.hh"
+#include "../net/tls_gnutls.hh"
+#include <seastar/net/tls.hh>
+#include <seastar/net/stack.hh>
 #include <seastar/util/defer.hh>
 #include <gnutls/crypto.h>
 #include <gnutls/gnutls.h>
@@ -28,10 +31,24 @@
 
 namespace seastar::crypto {
 
+class gnutls_tls_backend final : public tls_backend {
+public:
+    shared_ptr<tls::session_impl> make_session(
+            tls::session_type type,
+            shared_ptr<tls::certificate_credentials> creds,
+            std::unique_ptr<net::connected_socket_impl> sock,
+            const tls::tls_options& options) override;
+    const std::error_category& error_category() override;
+    std::vector<uint8_t> generate_session_ticket_key() override;
+};
+
 class gnutls_crypto_provider final : public crypto_provider {
 public:
     sstring sha1_hash(std::string_view input) override;
     sstring base64_encode(std::string_view input) override;
+    tls_backend& get_tls_backend() override;
+private:
+    gnutls_tls_backend _tls_backend;
 };
 
 sstring gnutls_crypto_provider::sha1_hash(std::string_view input) {
@@ -54,6 +71,26 @@ sstring gnutls_crypto_provider::base64_encode(std::string_view input) {
     }
     auto free_encoded_data = defer([&] () noexcept { gnutls_free(encoded_data.data); });
     return sstring(reinterpret_cast<const char*>(encoded_data.data), encoded_data.size);
+}
+
+shared_ptr<tls::session_impl> gnutls_tls_backend::make_session(
+        tls::session_type type,
+        shared_ptr<tls::certificate_credentials> creds,
+        std::unique_ptr<net::connected_socket_impl> sock,
+        const tls::tls_options& options) {
+    return tls::gnutls::make_session(type, std::move(creds), std::move(sock), options);
+}
+
+const std::error_category& gnutls_tls_backend::error_category() {
+    return tls::gnutls::error_category();
+}
+
+std::vector<uint8_t> gnutls_tls_backend::generate_session_ticket_key() {
+    return tls::gnutls::generate_session_ticket_key();
+}
+
+tls_backend& gnutls_crypto_provider::get_tls_backend() {
+    return _tls_backend;
 }
 
 std::unique_ptr<crypto_provider> create_gnutls_provider() {
