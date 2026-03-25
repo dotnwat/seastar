@@ -317,7 +317,7 @@ struct gnutls_datum : public gnutls_datum_t {
     }
 };
 
-class tls::certificate_credentials::impl: public gnutlsobj {
+class tls::certificate_credentials::impl: public gnutlsobj, public tls::credentials_impl {
 public:
     impl()
             : _creds([] {
@@ -339,19 +339,19 @@ public:
         return _creds;
     }
 
-    void set_x509_trust(const blob& b, x509_crt_format fmt) {
+    void set_x509_trust(const blob& b, x509_crt_format fmt) override {
         blob_wrapper w(b);
         gtls_chk(
                 gnutls_certificate_set_x509_trust_mem(_creds, &w,
                         gnutls_x509_crt_fmt_t(fmt)));
     }
-    void set_x509_crl(const blob& b, x509_crt_format fmt) {
+    void set_x509_crl(const blob& b, x509_crt_format fmt) override {
         blob_wrapper w(b);
         gtls_chk(
                 gnutls_certificate_set_x509_crl_mem(_creds, &w,
                         gnutls_x509_crt_fmt_t(fmt)));
     }
-    void set_x509_key(const blob& cert, const blob& key, x509_crt_format fmt) {
+    void set_x509_key(const blob& cert, const blob& key, x509_crt_format fmt) override {
         blob_wrapper w1(cert);
         blob_wrapper w2(key);
         gtls_chk(
@@ -359,13 +359,13 @@ public:
                         gnutls_x509_crt_fmt_t(fmt)));
     }
     void set_simple_pkcs12(const blob& b, x509_crt_format fmt,
-            const sstring& password) {
+            const sstring& password) override {
         blob_wrapper w(b);
         gtls_chk(
                 gnutls_certificate_set_x509_simple_pkcs12_mem(_creds, &w,
                         gnutls_x509_crt_fmt_t(fmt), password.c_str()));
     }
-    void dh_params(const tls::dh_params& dh) {
+    void dh_params(const tls::dh_params& dh) override {
 #if GNUTLS_VERSION_NUMBER >= 0x030506
         auto sec_param = dh._impl->sec_param();
         if (sec_param) {
@@ -377,19 +377,19 @@ public:
         gnutls_certificate_set_dh_params(*this, *cpy);
         _dh_params = std::move(cpy);
     }
-    future<> set_system_trust() {
+    future<> set_system_trust() override {
         return async([this] {
             gtls_chk(gnutls_certificate_set_x509_system_trust(_creds));
             _load_system_trust = false; // should only do once, for whatever reason
         });
     }
-    void set_client_auth(client_auth ca) {
+    void set_client_auth(client_auth ca) override {
         _client_auth = ca;
     }
     client_auth get_client_auth() const {
         return _client_auth;
     }
-    void set_session_resume_mode(session_resume_mode m, std::span<const uint8_t> key = {}) {
+    void set_session_resume_mode(session_resume_mode m, std::span<const uint8_t> key = {}) override {
         _session_resume_mode = m;
         // (re-)generate session key
         if (m != session_resume_mode::NONE) {
@@ -408,7 +408,7 @@ public:
     const gnutls_datum_t* get_session_resume_key() const {
         return &_session_resume_key;
     }
-    void set_priority_string(const sstring& prio) {
+    void set_priority_string(const sstring& prio) override {
         const char * err = prio.c_str();
         try {
             gnutls_priority_t p;
@@ -422,15 +422,15 @@ public:
         return _priority.get();
     }
 
-    void set_dn_verification_callback(dn_callback cb) {
+    void set_dn_verification_callback(dn_callback cb) override {
         _dn_callback = std::move(cb);
     }
 
-    void set_enable_certificate_verification(bool enable) {
+    void set_enable_certificate_verification(bool enable) override {
         _enable_certificate_verification = enable;
     }
 
-    void set_alpn_protocols(const std::vector<sstring>& protocols) {
+    void set_alpn_protocols(const std::vector<sstring>& protocols) override {
         _alpn_protocols = protocols;
     }
 
@@ -455,7 +455,6 @@ private:
     std::unique_ptr<std::remove_pointer_t<gnutls_priority_t>, void(*)(gnutls_priority_t)> _priority;
     client_auth _client_auth = client_auth::NONE;
     session_resume_mode _session_resume_mode = session_resume_mode::NONE;
-    bool _load_system_trust = false;
     semaphore _system_trust_sem {1};
     dn_callback _dn_callback;
     bool _enable_certificate_verification = true;
