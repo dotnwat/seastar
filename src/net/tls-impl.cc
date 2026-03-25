@@ -81,4 +81,11 @@ future<> tls::abstract_credentials::set_simple_pkcs12_file(
     });
 }
 
+future<tls::dh_params> tls::dh_params::from_file(
+        const sstring& filename, x509_crt_format fmt) {
+    return read_fully(filename, "dh parameters").then([fmt](temporary_buffer<char> buf) {
+        return make_ready_future<tls::dh_params>(tls::dh_params(tls::blob(buf.get()), fmt));
+    });
+}
+
 }
