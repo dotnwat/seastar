@@ -117,6 +117,36 @@ void visit_blobs(Blobs& blobs, Visitor&& visitor) {
 
 namespace seastar::tls {
 
+/// Abstract interface for TLS credentials.
+///
+/// This is the base class for backend-specific certificate_credentials::impl
+/// classes. Methods that are specific to one backend are virtual with a
+/// default no-op implementation, so each backend only overrides what it
+/// supports.
+class credentials_impl {
+public:
+    virtual ~credentials_impl() = default;
+
+    // Common methods — both backends implement these.
+    virtual void set_x509_trust(const blob&, x509_crt_format) = 0;
+    virtual void set_x509_crl(const blob&, x509_crt_format) = 0;
+    virtual void set_x509_key(const blob& cert, const blob& key, x509_crt_format) = 0;
+    virtual void set_simple_pkcs12(const blob&, x509_crt_format, const sstring& password) = 0;
+    virtual future<> set_system_trust() = 0;
+    virtual void set_dn_verification_callback(dn_callback) = 0;
+    virtual void set_enable_certificate_verification(bool) = 0;
+    virtual void set_client_auth(client_auth) = 0;
+    virtual void set_session_resume_mode(session_resume_mode, std::span<const uint8_t> key = {}) = 0;
+    virtual void set_alpn_protocols(const std::vector<sstring>&) = 0;
+    virtual void dh_params(const tls::dh_params&) = 0;
+
+    // GnuTLS-specific — no-op for other backends.
+    virtual void set_priority_string(const sstring&) {}
+
+    // Flag for lazy system trust loading.
+    bool _load_system_trust = false;
+};
+
 /// Abstract interface for a TLS session.
 ///
 /// This is the primary abstraction that TLS backends (GnuTLS, OpenSSL)
