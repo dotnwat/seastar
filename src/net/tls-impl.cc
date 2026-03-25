@@ -88,4 +88,76 @@ future<tls::dh_params> tls::dh_params::from_file(
     });
 }
 
+buffer_type to_buffer(const temporary_buffer<char>& buf) {
+    return buffer_type(buf.get(), buf.get() + buf.size());
+}
+
+void tls::credentials_builder::set_dh_level(dh_params::level level) {
+    _blobs.emplace(dh_level_key, level);
+}
+
+void tls::credentials_builder::set_x509_trust(const blob& b, x509_crt_format fmt) {
+    _blobs.emplace(x509_trust_key, x509_simple{ std::string(b), fmt });
+}
+
+void tls::credentials_builder::set_x509_crl(const blob& b, x509_crt_format fmt) {
+    _blobs.emplace(x509_crl_key, x509_simple{ std::string(b), fmt });
+}
+
+void tls::credentials_builder::set_x509_key(const blob& cert, const blob& key, x509_crt_format fmt) {
+    _blobs.emplace(x509_key_key, x509_key { std::string(cert), std::string(key), fmt });
+}
+
+void tls::credentials_builder::set_simple_pkcs12(const blob& b, x509_crt_format fmt, const sstring& password) {
+    _blobs.emplace(pkcs12_key, pkcs12_simple{std::string(b), fmt, password });
+}
+
+future<> tls::credentials_builder::set_x509_trust_file(const sstring& cafile, x509_crt_format fmt) {
+    return read_fully(cafile, "trust file").then([this, fmt](file_result f) {
+        _blobs.emplace(x509_trust_key, x509_simple{ to_buffer(f.buf), fmt, std::move(f.file) });
+    });
+}
+
+future<> tls::credentials_builder::set_x509_crl_file(const sstring& crlfile, x509_crt_format fmt) {
+    return read_fully(crlfile, "crl file").then([this, fmt](file_result f) {
+        _blobs.emplace(x509_crl_key, x509_simple{ to_buffer(f.buf), fmt, std::move(f.file) });
+    });
+}
+
+future<> tls::credentials_builder::set_x509_key_file(const sstring& cf, const sstring& kf, x509_crt_format fmt) {
+    return read_fully(cf, "certificate file").then([this, fmt, kf = kf](file_result cf) {
+        return read_fully(kf, "key file").then([this, fmt, cf = std::move(cf)](file_result kf) {
+            _blobs.emplace(x509_key_key, x509_key{ to_buffer(cf.buf), to_buffer(kf.buf), fmt, std::move(cf.file), std::move(kf.file) });
+        });
+    });
+}
+
+future<> tls::credentials_builder::set_simple_pkcs12_file(const sstring& pkcs12file, x509_crt_format fmt, const sstring& password) {
+    return read_fully(pkcs12file, "pkcs12 file").then([this, fmt, password = password](file_result f) {
+        _blobs.emplace(pkcs12_key, pkcs12_simple{ to_buffer(f.buf), fmt, password, std::move(f.file) });
+    });
+}
+
+future<> tls::credentials_builder::set_system_trust() {
+    // TODO / Caveat:
+    // We cannot actually issue a loading of system trust here,
+    // because we have no actual tls context.
+    // And we probably _don't want to get into the guessing game
+    // of where the system trust cert chains are, since this is
+    // super distro dependent, and usually compiled into the library.
+    // Pretent it is raining, and just set a flag.
+    // Leave the function returning future, so if we change our
+    // minds and want to do explicit loading, we can...
+    _blobs.emplace(system_trust, true);
+    return make_ready_future();
+}
+
+void tls::credentials_builder::set_client_auth(client_auth auth) {
+    _client_auth = auth;
+}
+
+void tls::credentials_builder::set_alpn_protocols(const std::vector<sstring>& protocols) {
+    _alpn_protocols = protocols;
+}
+
 }
