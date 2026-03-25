@@ -1944,8 +1944,6 @@ public:
         });
     }
 
-    struct session_ref;
-
     future<sstring> get_cipher_suite() override {
         return state_checked_access([this] {
             return sstring(gnutls_ciphersuite_get(*this));
@@ -2012,32 +2010,10 @@ private:
     std::unique_ptr<std::remove_pointer_t<gnutls_session_t>, void(*)(gnutls_session_t)> _session;
 };
 
-struct session::session_ref {
-    session_ref() = default;
-    session_ref(lw_shared_ptr<session> session)
-                    : _session(std::move(session)) {
-    }
-    session_ref(session_ref&&) = default;
-    session_ref(const session_ref&) = default;
-    ~session_ref() {
-        // This is not super pretty. But we take some care to only own sessions
-        // through session_ref, and we need to initiate shutdown on "last owner",
-        // since we cannot revive the session in destructor.
-        if (_session && _session.use_count() == 1) {
-            _session->close();
-        }
-    }
-
-    session_ref& operator=(session_ref&&) = default;
-    session_ref& operator=(const session_ref&) = default;
-
-    shared_ptr<session> _session;
-};
-
-class tls_connected_socket_impl : public net::connected_socket_impl, public session::session_ref {
+class tls_connected_socket_impl : public net::connected_socket_impl, public tls::session_ref {
 public:
-    tls_connected_socket_impl(session_ref&& sess)
-        : session_ref(std::move(sess))
+    tls_connected_socket_impl(tls::session_ref&& sess)
+        : tls::session_ref(std::move(sess))
     {}
 
     class source_impl;
@@ -2116,9 +2092,9 @@ public:
 };
 
 
-class tls_connected_socket_impl::source_impl: public data_source_impl, public session::session_ref {
+class tls_connected_socket_impl::source_impl: public data_source_impl, public tls::session_ref {
 public:
-    using session_ref::session_ref;
+    using tls::session_ref::session_ref;
 private:
     future<temporary_buffer<char>> get() override {
         return _session->get();
@@ -2133,9 +2109,9 @@ private:
 // produced, cannot exist outside the direct life span of
 // the connected_socket itself. This is consistent with
 // other sockets in seastar, though I am than less fond of it...
-class tls_connected_socket_impl::sink_impl: public data_sink_impl, public session::session_ref {
+class tls_connected_socket_impl::sink_impl: public data_sink_impl, public tls::session_ref {
 public:
-    using session_ref::session_ref;
+    using tls::session_ref::session_ref;
 private:
     future<> flush() override {
         return _session->flush();
@@ -2260,13 +2236,13 @@ future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cr
 }
 
 future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, tls_options options) {
-    session::session_ref sess(make_shared<session>(session::type::CLIENT, std::move(cred), std::move(s),  options));
+    tls::session_ref sess(make_shared<session>(session::type::CLIENT, std::move(cred), std::move(s),  options));
     connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
     return make_ready_future<connected_socket>(std::move(sock));
 }
 
 future<connected_socket> tls::wrap_server(shared_ptr<server_credentials> cred, connected_socket&& s) {
-    session::session_ref sess(make_shared<session>(session::type::SERVER, std::move(cred), std::move(s)));
+    tls::session_ref sess(make_shared<session>(session::type::SERVER, std::move(cred), std::move(s)));
     connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
     return make_ready_future<connected_socket>(std::move(sock));
 }
