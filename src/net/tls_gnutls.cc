@@ -97,42 +97,6 @@ public:
     }
 };
 
-// Helper
-struct file_info {
-    sstring filename;
-    std::chrono::system_clock::time_point modified;
-};
-
-struct file_result {
-    temporary_buffer<char> buf;
-    file_info file;
-    operator temporary_buffer<char>&&() && {
-        return std::move(buf);
-    }
-};
-
-static future<file_result> read_fully(const sstring& name, const sstring& what) {
-    return open_file_dma(name, open_flags::ro).then([name = name](file f) mutable {
-        return do_with(std::move(f), [name = std::move(name)](file& f) mutable {
-            return f.stat().then([&f, name = std::move(name)](struct stat s) mutable {
-                return f.dma_read_bulk<char>(0, s.st_size).then([s, name = std::move(name)](temporary_buffer<char> buf) mutable {
-                    return file_result{ std::move(buf), file_info{
-                        std::move(name), std::chrono::system_clock::from_time_t(s.st_mtim.tv_sec) +
-                            std::chrono::duration_cast<std::chrono::system_clock::duration>(std::chrono::nanoseconds(s.st_mtim.tv_nsec))
-                    } };
-                });
-            }).finally([&f]() {
-                return f.close();
-            });
-        });
-    }).handle_exception([name = name, what = what](std::exception_ptr ep) -> future<file_result> {
-       try {
-           std::rethrow_exception(std::move(ep));
-       } catch (...) {
-           std::throw_with_nested(std::runtime_error(sstring("Could not read ") + what + " " + name));
-       }
-    });
-}
 
 // Note: we are not using gnutls++ interfaces, mainly because we
 // want to keep _our_ interface reasonably non-gnutls (well...)
