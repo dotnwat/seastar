@@ -57,6 +57,8 @@
 #include <seastar/core/with_timeout.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/net/stack.hh>
+#include "tls-impl.hh"
+#include "tls_gnutls.hh"
 #include <seastar/util/std-compat.hh>
 #include <seastar/util/variant_utils.hh>
 #include <seastar/core/fsnotify.hh>
@@ -1829,7 +1831,30 @@ future<connected_socket> tls::wrap_server(shared_ptr<server_credentials> cred, c
     return make_ready_future<connected_socket>(std::move(sock));
 }
 
+
+
+shared_ptr<tls::session_impl> tls::gnutls::make_session(
+        tls::session_type type,
+        shared_ptr<tls::certificate_credentials> creds,
+        std::unique_ptr<net::connected_socket_impl> sock,
+        const tls::tls_options& options) {
+    auto t = type == tls::session_type::CLIENT ? session::type::CLIENT : session::type::SERVER;
+    return seastar::make_shared<session>(t, std::move(creds), std::move(sock), options);
 }
+
+const std::error_category& tls::gnutls::error_category() {
+    return tls::error_category();
+}
+
+std::vector<uint8_t> tls::gnutls::generate_session_ticket_key() {
+    gnutls_datum_t key;
+    gtls_chk(gnutls_session_ticket_key_generate(&key));
+    auto result = std::vector<uint8_t>(key.data, key.data + key.size);
+    gnutls_free(key.data);
+    return result;
+}
+
+} // namespace seastar
 
 const int seastar::tls::ERROR_UNKNOWN_COMPRESSION_ALGORITHM = GNUTLS_E_UNKNOWN_COMPRESSION_ALGORITHM;
 const int seastar::tls::ERROR_UNKNOWN_CIPHER_TYPE = GNUTLS_E_UNKNOWN_CIPHER_TYPE;
