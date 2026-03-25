@@ -20,10 +20,12 @@
  */
 #pragma once
 
+#include <memory>
 #include <span>
 #include <unordered_set>
 
 #include <seastar/core/future.hh>
+#include <seastar/core/shared_ptr.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/net/stack.hh>
@@ -53,6 +55,29 @@ public:
     virtual future<sstring> get_cipher_suite() = 0;
     virtual future<sstring> get_protocol_version() = 0;
     virtual future<> force_rehandshake() = 0;
+};
+
+/// Shared-ownership wrapper for session_impl.
+///
+/// Initiates session close when the last owner is destroyed, since the
+/// session cannot be revived from a destructor.
+struct session_ref {
+    session_ref() = default;
+    session_ref(shared_ptr<session_impl> session)
+        : _session(std::move(session)) {
+    }
+    session_ref(session_ref&&) = default;
+    session_ref(const session_ref&) = default;
+    ~session_ref() {
+        if (_session && _session.use_count() == 1) {
+            _session->close();
+        }
+    }
+
+    session_ref& operator=(session_ref&&) = default;
+    session_ref& operator=(const session_ref&) = default;
+
+    shared_ptr<session_impl> _session;
 };
 
 } // namespace seastar::tls
