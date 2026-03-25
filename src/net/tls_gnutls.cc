@@ -65,19 +65,6 @@ namespace seastar {
 
 using namespace std::string_view_literals;
 
-class net::get_impl {
-public:
-    static std::unique_ptr<connected_socket_impl> get(connected_socket s) {
-        return std::move(s._csi);
-    }
-
-    static connected_socket_impl* maybe_get_ptr(connected_socket& s) {
-        if (s._csi) {
-            return s._csi.get();
-        }
-        return nullptr;
-    }
-};
 
 class blob_wrapper: public gnutls_datum_t {
 public:
