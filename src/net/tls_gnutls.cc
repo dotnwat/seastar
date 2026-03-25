@@ -1998,33 +1998,6 @@ private:
 };
 
 
-class server_session : public net::server_socket_impl {
-public:
-    server_session(shared_ptr<server_credentials> creds, server_socket sock)
-            : _creds(std::move(creds)), _sock(std::move(sock)) {
-    }
-    future<accept_result> accept() override {
-        // We're not actually doing anything very SSL until we get
-        // an actual connection. Then we create a "server" session
-        // and wrap it up after handshaking.
-        return _sock.accept().then([this](accept_result ar) {
-            return wrap_server(_creds, std::move(ar.connection)).then([addr = std::move(ar.remote_address)](connected_socket s) {
-                return make_ready_future<accept_result>(accept_result{std::move(s), addr});
-            });
-        });
-    }
-    void abort_accept() override  {
-        _sock.abort_accept();
-    }
-    socket_address local_address() const override {
-        return _sock.local_address();
-    }
-private:
-
-    shared_ptr<server_credentials> _creds;
-    server_socket _sock;
-};
-
 class tls_socket_impl : public net::socket_impl {
     shared_ptr<certificate_credentials> _cred;
     tls_options _options;
