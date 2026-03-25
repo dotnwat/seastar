@@ -22,6 +22,7 @@
 #include <sys/stat.h>
 
 #include <seastar/core/file.hh>
+#include <seastar/core/reactor.hh>
 
 #include "tls-impl.hh"
 
@@ -191,6 +192,100 @@ std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name::value_ty
 std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name& a) {
     fmt::print(os, "{}", a);
     return os;
+}
+
+future<connected_socket> tls::connect(shared_ptr<certificate_credentials> cred, socket_address sa, sstring name) {
+    tls_options options{.server_name = std::move(name)};
+    return connect(std::move(cred), std::move(sa), std::move(options));
+}
+
+future<connected_socket> tls::connect(shared_ptr<certificate_credentials> cred, socket_address sa, socket_address local, sstring name) {
+    tls_options options{.server_name = std::move(name)};
+    return connect(std::move(cred), std::move(sa), std::move(local), std::move(options));
+}
+
+future<connected_socket> tls::connect(shared_ptr<certificate_credentials> cred, socket_address sa, tls_options options) {
+    return engine().connect(sa).then([cred = std::move(cred), options = std::move(options)](connected_socket s) mutable {
+        return wrap_client(std::move(cred), std::move(s), std::move(options));
+    });
+}
+
+future<connected_socket> tls::connect(shared_ptr<certificate_credentials> cred, socket_address sa, socket_address local, tls_options options) {
+    return engine().connect(sa, local).then([cred = std::move(cred), options = std::move(options)](connected_socket s) mutable {
+        return wrap_client(std::move(cred), std::move(s), std::move(options));
+    });
+}
+
+socket tls::socket(shared_ptr<certificate_credentials> cred, sstring name) {
+    tls_options options{.server_name = std::move(name)};
+    return tls::socket(std::move(cred), std::move(options));
+}
+
+socket tls::socket(shared_ptr<certificate_credentials> cred, tls_options options) {
+    return ::seastar::socket(std::make_unique<tls_socket_impl>(std::move(cred), std::move(options)));
+}
+
+server_socket tls::listen(shared_ptr<server_credentials> creds, socket_address sa, listen_options opts) {
+    return listen(std::move(creds), seastar::listen(sa, opts));
+}
+
+server_socket tls::listen(shared_ptr<server_credentials> creds, server_socket ss) {
+    server_socket ssls(std::make_unique<server_session>(creds, std::move(ss)));
+    return server_socket(std::move(ssls));
+}
+
+static tls::tls_connected_socket_impl* get_tls_socket(connected_socket& socket) {
+    auto impl = net::get_impl::maybe_get_ptr(socket);
+    if (impl == nullptr) {
+        // the socket is not yet created or moved from
+        throw std::system_error(ENOTCONN, std::system_category());
+    }
+    auto tls_impl = dynamic_cast<tls::tls_connected_socket_impl*>(impl);
+    if (!tls_impl) {
+        // bad cast here means that we're dealing with wrong socket type
+        throw std::invalid_argument("Not a TLS socket");
+    }
+    return tls_impl;
+}
+
+future<std::optional<session_dn>> tls::get_dn_information(connected_socket& socket) {
+    return get_tls_socket(socket)->get_distinguished_name();
+}
+
+future<std::vector<tls::subject_alt_name>> tls::get_alt_name_information(connected_socket& socket, std::unordered_set<subject_alt_name_type> types) {
+    return get_tls_socket(socket)->get_alt_name_information(std::move(types));
+}
+
+future<std::vector<tls::certificate_data>> tls::get_peer_certificate_chain(connected_socket& socket) {
+    return get_tls_socket(socket)->get_peer_certificate_chain();
+}
+
+future<bool> tls::check_session_is_resumed(connected_socket& socket) {
+    return get_tls_socket(socket)->check_session_is_resumed();
+}
+
+future<tls::session_data> tls::get_session_resume_data(connected_socket& socket) {
+    return get_tls_socket(socket)->get_session_resume_data();
+}
+
+future<std::optional<sstring>> tls::get_selected_alpn_protocol(connected_socket& socket) {
+    return get_tls_socket(socket)->get_selected_alpn_protocol();
+}
+
+future<sstring> tls::get_cipher_suite(connected_socket& socket) {
+    return get_tls_socket(socket)->get_cipher_suite();
+}
+
+future<sstring> tls::get_protocol_version(connected_socket& socket) {
+    return get_tls_socket(socket)->get_protocol_version();
+}
+
+future<> tls::force_rehandshake(connected_socket& socket) {
+    auto s = get_tls_socket(socket);
+    if (!s) {
+        return make_ready_future<>();
+    }
+    return s->force_rehandshake();
 }
 
 }
