@@ -40,6 +40,7 @@ public:
             const tls::tls_options& options) override;
     const std::error_category& error_category() override;
     std::vector<uint8_t> generate_session_ticket_key() override;
+    shared_ptr<tls::credentials_impl> make_credentials_impl() override;
 };
 
 class gnutls_crypto_provider final : public crypto_provider {
@@ -87,6 +88,10 @@ const std::error_category& gnutls_tls_backend::error_category() {
 
 std::vector<uint8_t> gnutls_tls_backend::generate_session_ticket_key() {
     return tls::gnutls::generate_session_ticket_key();
+}
+
+shared_ptr<tls::credentials_impl> gnutls_tls_backend::make_credentials_impl() {
+    return tls::gnutls::make_credentials_impl();
 }
 
 tls_backend& gnutls_crypto_provider::get_tls_backend() {

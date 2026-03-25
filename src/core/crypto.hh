@@ -33,6 +33,7 @@
 namespace seastar::net { class connected_socket_impl; }
 namespace seastar::tls {
     class session_impl;
+    class credentials_impl;
     class certificate_credentials;
     enum class session_type;
     struct tls_options;
@@ -61,6 +62,9 @@ public:
 
     /// \brief Generate a session ticket encryption key.
     virtual std::vector<uint8_t> generate_session_ticket_key() = 0;
+
+    /// \brief Create a backend-specific credentials implementation.
+    virtual shared_ptr<tls::credentials_impl> make_credentials_impl() = 0;
 };
 
 /// \brief Abstract interface for cryptographic primitives.

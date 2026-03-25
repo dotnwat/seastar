@@ -30,6 +30,7 @@
 namespace seastar::net { class connected_socket_impl; }
 namespace seastar::tls {
     class session_impl;
+    class credentials_impl;
     class certificate_credentials;
     enum class session_type;
     struct tls_options;
@@ -49,5 +50,8 @@ const std::error_category& error_category();
 
 /// Generate a session ticket key using GnuTLS.
 std::vector<uint8_t> generate_session_ticket_key();
+
+/// Create a GnuTLS credentials implementation.
+shared_ptr<credentials_impl> make_credentials_impl();
 
 } // namespace seastar::tls::gnutls

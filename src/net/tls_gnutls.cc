@@ -56,6 +56,7 @@
 #include <seastar/core/with_timeout.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/net/stack.hh>
+#include "../core/crypto.hh"
 #include "tls-impl.hh"
 #include "tls_gnutls.hh"
 #include <seastar/util/std-compat.hh>
@@ -318,6 +319,10 @@ struct gnutls_datum : public gnutls_datum_t {
 
 class tls::certificate_credentials::impl: public gnutlsobj, public tls::credentials_impl {
 public:
+    static shared_ptr<impl> create() {
+        return make_shared<impl>();
+    }
+
     impl()
             : _creds([] {
                 gnutls_certificate_credentials_t xcred;
@@ -462,7 +467,7 @@ private:
 };
 
 tls::certificate_credentials::certificate_credentials()
-        : _impl(make_shared<impl>()) {
+        : _impl(crypto::provider().get_tls_backend().make_credentials_impl()) {
 }
 
 tls::certificate_credentials::~certificate_credentials() {
@@ -919,7 +924,7 @@ public:
 
     session(type t, shared_ptr<tls::certificate_credentials> creds,
             std::unique_ptr<net::connected_socket_impl> sock, tls_options options = {})
-            : _type(t), _sock(std::move(sock)), _creds(creds->_impl),
+            : _type(t), _sock(std::move(sock)), _creds(static_pointer_cast<tls::certificate_credentials::impl>(creds->_impl)),
                     _in(_sock->source()), _out(_sock->sink()),
                     _in_sem(1), _out_sem(1), _options(std::move(options)), _output_pending(
                     make_ready_future<>()), _session([t] {
@@ -1827,6 +1832,10 @@ std::vector<uint8_t> tls::gnutls::generate_session_ticket_key() {
     auto result = std::vector<uint8_t>(key.data, key.data + key.size);
     gnutls_free(key.data);
     return result;
+}
+
+shared_ptr<tls::credentials_impl> tls::gnutls::make_credentials_impl() {
+    return tls::certificate_credentials::impl::create();
 }
 
 } // namespace seastar

@@ -67,6 +67,7 @@ namespace tls {
     class server_credentials;
     class certificate_credentials;
     class credentials_builder;
+    class credentials_impl;
 
     /**
      * Diffie-Hellman parameters for
@@ -222,15 +223,15 @@ namespace tls {
          */
         void set_enable_certificate_verification(bool enable);
 
+        class impl; // defined by each backend
     private:
-        class impl;
         friend class session;
         friend class server_session;
         friend class server_credentials;
         friend class credentials_builder;
         template<typename Base>
         friend class reloadable_credentials;
-        shared_ptr<impl> _impl;
+        shared_ptr<credentials_impl> _impl;
     };
 
     /** Exception thrown on certificate validation error */
