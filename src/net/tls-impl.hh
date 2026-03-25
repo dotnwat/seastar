@@ -20,9 +20,13 @@
  */
 #pragma once
 
+#include <any>
 #include <memory>
 #include <span>
+#include <string_view>
 #include <unordered_set>
+
+#include <boost/range/iterator_range.hpp>
 
 #include <seastar/core/future.hh>
 #include <seastar/core/shared_ptr.hh>
@@ -61,6 +65,53 @@ struct file_result {
 };
 
 future<file_result> read_fully(const sstring& name, const sstring& what);
+
+using buffer_type = std::basic_string<tls::blob::value_type, tls::blob::traits_type, std::allocator<tls::blob::value_type>>;
+
+buffer_type to_buffer(const temporary_buffer<char>& buf);
+
+constexpr auto dh_level_key = std::string_view("dh_level");
+constexpr auto x509_trust_key = std::string_view("x509_trust");
+constexpr auto x509_crl_key = std::string_view("x509_crl");
+constexpr auto x509_key_key = std::string_view("x509_key");
+constexpr auto pkcs12_key = std::string_view("pkcs12");
+constexpr auto system_trust = std::string_view("system_trust");
+
+struct x509_simple {
+    buffer_type data;
+    tls::x509_crt_format format;
+    file_info file;
+};
+
+struct x509_key {
+    buffer_type cert;
+    buffer_type key;
+    tls::x509_crt_format format;
+    file_info cert_file;
+    file_info key_file;
+};
+
+struct pkcs12_simple {
+    buffer_type data;
+    tls::x509_crt_format format;
+    sstring password;
+    file_info file;
+};
+
+template<typename Blobs, typename Visitor>
+void visit_blobs(Blobs& blobs, Visitor&& visitor) {
+    auto visit = [&](const std::string_view& key, auto* vt) {
+        auto tr = blobs.equal_range(key);
+        for (auto& p : boost::make_iterator_range(tr.first, tr.second)) {
+            auto* v = std::any_cast<std::decay_t<decltype(*vt)>>(&p.second);
+            visitor(key, *v);
+        }
+    };
+    visit(x509_trust_key, static_cast<x509_simple*>(nullptr));
+    visit(x509_crl_key, static_cast<x509_simple*>(nullptr));
+    visit(x509_key_key, static_cast<x509_key*>(nullptr));
+    visit(pkcs12_key, static_cast<pkcs12_simple*>(nullptr));
+}
 
 } // namespace seastar
 
