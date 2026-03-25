@@ -176,8 +176,8 @@ protected:
 
 using connection = basic_connection<false, false>;
 
-std::string sha1_base64(std::string_view source);
-std::string encode_base64(std::string_view source);
+sstring sha1_base64(std::string_view source);
+sstring encode_base64(std::string_view source);
 
 extern logger websocket_logger;
 

@@ -22,11 +22,10 @@
 #include <seastar/core/future.hh>
 #include <seastar/websocket/common.hh>
 #include <seastar/core/byteorder.hh>
+#include "../core/crypto.hh"
 #include <seastar/core/when_all.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/defer.hh>
-#include <gnutls/crypto.h>
-#include <gnutls/gnutls.h>
 #include <random>
 #include <seastar/websocket/parser.hh>
 
@@ -170,28 +169,13 @@ future<> basic_connection<is_client, text_frame>::read_one() {
     });
 }
 
-std::string sha1_base64(std::string_view source) {
-    unsigned char hash[20];
-    SEASTAR_ASSERT(sizeof(hash) == gnutls_hash_get_len(GNUTLS_DIG_SHA1));
-    if (int ret = gnutls_hash_fast(GNUTLS_DIG_SHA1, source.data(), source.size(), hash);
-        ret != GNUTLS_E_SUCCESS) {
-        throw websocket::exception(fmt::format("gnutls_hash_fast: {}", gnutls_strerror(ret)));
-    }
-    return encode_base64(std::string_view(reinterpret_cast<const char*>(hash), sizeof(hash)));
+sstring sha1_base64(std::string_view source) {
+    auto& cp = crypto::provider();
+    return cp.base64_encode(cp.sha1_hash(source));
 }
 
-std::string encode_base64(std::string_view source) {
-    gnutls_datum_t src_data{
-        .data = reinterpret_cast<uint8_t*>(const_cast<char*>(source.data())),
-        .size = static_cast<unsigned>(source.size())
-    };
-    gnutls_datum_t encoded_data;
-    if (int ret = gnutls_base64_encode2(&src_data, &encoded_data); ret != GNUTLS_E_SUCCESS) {
-        throw websocket::exception(fmt::format("gnutls_base64_encode2: {}", gnutls_strerror(ret)));
-    }
-    auto free_encoded_data = defer([&] () noexcept { gnutls_free(encoded_data.data); });
-    // base64_encoded.data is "unsigned char *"
-    return std::string(reinterpret_cast<const char*>(encoded_data.data), encoded_data.size);
+sstring encode_base64(std::string_view source) {
+    return crypto::provider().base64_encode(source);
 }
 
 template class basic_connection<true, false>;
