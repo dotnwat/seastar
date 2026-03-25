@@ -1,0 +1,69 @@
+/*
+ * This file is open source software, licensed to you under the terms
+ * of the Apache License, Version 2.0 (the "License").  See the NOTICE file
+ * distributed with this work for additional information regarding copyright
+ * ownership.  You may not use this file except in compliance with the License.
+ *
+ * You may obtain a copy of the License at
+ *
+ *   http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
+ */
+/*
+ * Copyright 2024 ScyllaDB
+ */
+
+#pragma once
+
+#include <seastar/core/sstring.hh>
+#include <memory>
+#include <string_view>
+
+namespace seastar::crypto {
+
+/// \brief Abstract interface for cryptographic primitives.
+///
+/// Provides backend-agnostic access to hashing and encoding
+/// operations. Implementations exist for GnuTLS and (in the future)
+/// OpenSSL.  A process-wide provider is selected at startup via
+/// set_provider() and retrieved with provider().
+class crypto_provider {
+public:
+    virtual ~crypto_provider() = default;
+
+    /// \brief Compute the SHA-1 hash of \p input.
+    /// \return The raw 20-byte hash value.
+    virtual sstring sha1_hash(std::string_view input) = 0;
+
+    /// \brief Base64-encode \p input.
+    /// \return The base64-encoded string.
+    virtual sstring base64_encode(std::string_view input) = 0;
+};
+
+/// \brief Return the process-wide crypto provider.
+///
+/// Must be called after set_provider().  The returned reference
+/// remains valid for the lifetime of the process.
+crypto_provider& provider();
+
+/// \brief Install the process-wide crypto provider.
+///
+/// Must be called exactly once, before any call to provider().
+/// Ownership is transferred to the crypto subsystem.
+void set_provider(std::unique_ptr<crypto_provider> p);
+
+/// \brief Create a GnuTLS-backed crypto provider.
+std::unique_ptr<crypto_provider> create_gnutls_provider();
+
+#ifdef SEASTAR_HAVE_OPENSSL
+/// \brief Create an OpenSSL-backed crypto provider.
+std::unique_ptr<crypto_provider> create_openssl_provider();
+#endif
+
+} // namespace seastar::crypto
