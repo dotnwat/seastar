@@ -1923,40 +1923,6 @@ future<> tls::force_rehandshake(connected_socket& socket) {
 }
 
 
-std::string_view tls::format_as(subject_alt_name_type type) {
-    switch (type) {
-        case subject_alt_name_type::dnsname:
-            return "DNS";
-        case subject_alt_name_type::rfc822name:
-            return "EMAIL";
-        case subject_alt_name_type::uri:
-            return "URI";
-        case subject_alt_name_type::ipaddress:
-            return "IP";
-        case subject_alt_name_type::othername:
-            return "OTHERNAME";
-        case subject_alt_name_type::dn:
-            return "DIRNAME";
-        default:
-            return "UNKNOWN";
-    }
-}
-
-std::ostream& tls::operator<<(std::ostream& os, subject_alt_name_type type) {
-    return os << format_as(type);
-}
-
-std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name::value_type& v) {
-    fmt::print(os, "{}", v);
-    return os;
-}
-
-std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name& a) {
-    fmt::print(os, "{}", a);
-    return os;
-}
-
-
 }
 
 const int seastar::tls::ERROR_UNKNOWN_COMPRESSION_ALGORITHM = GNUTLS_E_UNKNOWN_COMPRESSION_ALGORITHM;
