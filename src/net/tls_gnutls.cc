@@ -543,14 +543,6 @@ void tls::credentials_builder::set_priority_string(const sstring& prio) {
     _priority = prio;
 }
 
-void tls::credentials_builder::set_session_resume_mode(session_resume_mode m) {
-    _session_resume_mode = m;
-    if (m != session_resume_mode::NONE) {
-        gnutls_datum key;
-        gtls_chk(gnutls_session_ticket_key_generate(&key));
-        _session_resume_key.assign(key.data, key.data + key.size);
-    }
-}
 
 void tls::credentials_builder::apply_to(certificate_credentials& creds) const {
     // Could potentially be templated down, but why bother...

@@ -166,6 +166,13 @@ void tls::credentials_builder::set_client_auth(client_auth auth) {
     _client_auth = auth;
 }
 
+void tls::credentials_builder::set_session_resume_mode(session_resume_mode m) {
+    _session_resume_mode = m;
+    if (m != session_resume_mode::NONE) {
+        _session_resume_key = crypto::provider().get_tls_backend().generate_session_ticket_key();
+    }
+}
+
 void tls::credentials_builder::set_alpn_protocols(const std::vector<sstring>& protocols) {
     _alpn_protocols = protocols;
 }
