@@ -98,4 +98,138 @@ struct session_ref {
     shared_ptr<session_impl> _session;
 };
 
+class tls_connected_socket_impl : public net::connected_socket_impl, public session_ref {
+public:
+    tls_connected_socket_impl(session_ref&& sess)
+        : session_ref(std::move(sess))
+    {}
+
+    class source_impl;
+    class sink_impl;
+
+    using net::connected_socket_impl::source;
+    data_source source() override;
+    data_sink sink() override;
+
+    void shutdown_input() override {
+        _session->close();
+    }
+    void shutdown_output() override {
+        _session->close();
+    }
+    void set_nodelay(bool nodelay) override {
+        _session->socket().set_nodelay(nodelay);
+    }
+    bool get_nodelay() const override {
+        return _session->socket().get_nodelay();
+    }
+    void set_keepalive(bool keepalive) override {
+        _session->socket().set_keepalive(keepalive);
+    }
+    bool get_keepalive() const override {
+        return _session->socket().get_keepalive();
+    }
+    void set_keepalive_parameters(const net::keepalive_params& p) override {
+        _session->socket().set_keepalive_parameters(p);
+    }
+    net::keepalive_params get_keepalive_parameters() const override {
+        return _session->socket().get_keepalive_parameters();
+    }
+    void set_sockopt(int level, int optname, const void* data, size_t len) override {
+        _session->socket().set_sockopt(level, optname, data, len);
+    }
+    int get_sockopt(int level, int optname, void* data, size_t len) const override {
+        return _session->socket().get_sockopt(level, optname, data, len);
+    }
+    socket_address local_address() const noexcept override {
+        return _session->socket().local_address();
+    }
+    socket_address remote_address() const noexcept override {
+        return _session->socket().remote_address();
+    }
+    future<std::optional<session_dn>> get_distinguished_name() {
+        return _session->get_distinguished_name();
+    }
+    future<std::vector<subject_alt_name>> get_alt_name_information(std::unordered_set<subject_alt_name_type> types) {
+        return _session->get_alt_name_information(std::move(types));
+    }
+    future<std::vector<certificate_data>> get_peer_certificate_chain() {
+        return _session->get_peer_certificate_chain();
+    }
+    future<> wait_input_shutdown() override {
+        return _session->socket().wait_input_shutdown();
+    }
+    future<bool> check_session_is_resumed() {
+        return _session->is_resumed();
+    }
+    future<session_data> get_session_resume_data() {
+        return _session->get_session_resume_data();
+    }
+    future<std::optional<sstring>> get_selected_alpn_protocol() {
+        return _session->get_selected_alpn_protocol();
+    }
+    future<sstring> get_cipher_suite() const {
+        return _session->get_cipher_suite();
+    }
+    future<sstring> get_protocol_version() const {
+        return _session->get_protocol_version();
+    }
+    future<> force_rehandshake() {
+        return _session->force_rehandshake();
+    }
+};
+
+class tls_connected_socket_impl::source_impl: public data_source_impl, public session_ref {
+public:
+    using session_ref::session_ref;
+private:
+    future<temporary_buffer<char>> get() override {
+        return _session->get();
+    }
+    future<> close() override {
+        _session->close();
+        return make_ready_future<>();
+    }
+};
+
+// Note: source/sink, and by extension, the in/out streams
+// produced, cannot exist outside the direct life span of
+// the connected_socket itself. This is consistent with
+// other sockets in seastar, though I am than less fond of it...
+class tls_connected_socket_impl::sink_impl: public data_sink_impl, public session_ref {
+public:
+    using session_ref::session_ref;
+private:
+    future<> flush() override {
+        return _session->flush();
+    }
+#if SEASTAR_API_LEVEL >= 9
+    future<> put(std::span<temporary_buffer<char>> bufs) override {
+        return _session->put(bufs);
+    }
+#else
+    using data_sink_impl::put;
+    future<> put(net::packet p) override {
+        auto vec = p.release();
+        return _session->put(std::span(vec));
+    }
+#endif
+    future<> close() override {
+        _session->close();
+        return make_ready_future<>();
+    }
+    bool can_batch_flushes() const noexcept override { return true; }
+    void on_batch_flush_error() noexcept override {
+        _session->close();
+    }
+};
+
+inline data_source tls::tls_connected_socket_impl::source() {
+    return data_source(std::make_unique<source_impl>(_session));
+}
+
+inline data_sink tls::tls_connected_socket_impl::sink() {
+    return data_sink(std::make_unique<sink_impl>(_session));
+}
+
 } // namespace seastar::tls
