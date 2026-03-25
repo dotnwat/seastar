@@ -1998,30 +1998,6 @@ private:
 };
 
 
-class tls_socket_impl : public net::socket_impl {
-    shared_ptr<certificate_credentials> _cred;
-    tls_options _options;
-    ::seastar::socket _socket;
-public:
-    tls_socket_impl(shared_ptr<certificate_credentials> cred, tls_options options)
-            : _cred(cred), _options(std::move(options)), _socket(make_socket()) {
-    }
-    virtual future<connected_socket> connect(socket_address sa, socket_address local, transport proto = transport::TCP) override {
-        return _socket.connect(sa, local, proto).then([cred = std::move(_cred), options = std::move(_options)](connected_socket s) mutable {
-            return wrap_client(cred, std::move(s), std::move(options));
-        });
-    }
-    void set_reuseaddr(bool reuseaddr) override {
-      _socket.set_reuseaddr(reuseaddr);
-    }
-    bool get_reuseaddr() const override {
-      return _socket.get_reuseaddr();
-    }
-    virtual void shutdown() override {
-        _socket.shutdown();
-    }
-};
-
 }
 
 
