@@ -746,6 +746,8 @@ add_library (seastar
   src/core/io_queue.cc
   src/core/semaphore.cc
   src/core/condition-variable.cc
+  src/core/crypto.cc
+  src/core/crypto_gnutls.cc
   src/http/api_docs.cc
   src/http/common.cc
   src/http/file_handler.cc

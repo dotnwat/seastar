@@ -47,10 +47,16 @@ struct reactor_config {
 /// \endcond
 
 class reactor_backend_selector;
+class crypto_provider_factory;
 class network_stack_factory;
 
 /// Configuration for the reactor.
 struct reactor_options : public program_options::option_group {
+    /// \brief Select cryptographic provider backend.
+    ///
+    /// Available providers:
+    /// * gnutls (default)
+    program_options::selection_value<crypto_provider_factory> crypto_provider;
     /// \brief Select network stack to use.
     ///
     /// Each network stack has it corresponding
