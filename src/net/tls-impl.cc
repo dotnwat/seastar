@@ -58,4 +58,35 @@ data_sink tls::tls_connected_socket_impl::sink() {
     return data_sink(std::make_unique<sink_impl>(_session));
 }
 
+future<> tls::abstract_credentials::set_x509_trust_file(
+        const sstring& cafile, x509_crt_format fmt) {
+    return read_fully(cafile, "trust file").then([this, fmt](temporary_buffer<char> buf) {
+        set_x509_trust(blob(buf.get(), buf.size()), fmt);
+    });
+}
+
+future<> tls::abstract_credentials::set_x509_crl_file(
+        const sstring& crlfile, x509_crt_format fmt) {
+    return read_fully(crlfile, "crl file").then([this, fmt](temporary_buffer<char> buf) {
+        set_x509_crl(blob(buf.get(), buf.size()), fmt);
+    });
+}
+
+future<> tls::abstract_credentials::set_x509_key_file(
+        const sstring& cf, const sstring& kf, x509_crt_format fmt) {
+    return read_fully(cf, "certificate file").then([this, fmt, kf = kf](temporary_buffer<char> buf) {
+        return read_fully(kf, "key file").then([this, fmt, buf = std::move(buf)](temporary_buffer<char> buf2) {
+                    set_x509_key(blob(buf.get(), buf.size()), blob(buf2.get(), buf2.size()), fmt);
+                });
+    });
+}
+
+future<> tls::abstract_credentials::set_simple_pkcs12_file(
+        const sstring& pkcs12file, x509_crt_format fmt,
+        const sstring& password) {
+    return read_fully(pkcs12file, "pkcs12 file").then([this, fmt, password = password](temporary_buffer<char> buf) {
+        set_simple_pkcs12(blob(buf.get(), buf.size()), fmt, password);
+    });
+}
+
 }
