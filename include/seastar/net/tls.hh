@@ -67,6 +67,10 @@ namespace tls {
     class server_credentials;
     class certificate_credentials;
     class credentials_builder;
+    class credentials_impl;
+    class dh_params_impl;
+    // allow backend friends
+    class gnutls_provider_certificate_credentials_impl;
 
     /**
      * Diffie-Hellman parameters for
@@ -95,10 +99,10 @@ namespace tls {
         /** loads a key from file */
         static future<dh_params> from_file(const sstring&, x509_crt_format);
     private:
-        class impl;
         friend class server_credentials;
         friend class certificate_credentials;
-        std::unique_ptr<impl> _impl;
+        friend class gnutls_provider_certificate_credentials_impl;
+        std::unique_ptr<dh_params_impl> _impl;
     };
 
     class x509_cert {
@@ -223,14 +227,13 @@ namespace tls {
         void set_enable_certificate_verification(bool enable);
 
     private:
-        class impl;
         friend class session;
         friend class server_session;
         friend class server_credentials;
         friend class credentials_builder;
         template<typename Base>
         friend class reloadable_credentials;
-        shared_ptr<impl> _impl;
+        shared_ptr<credentials_impl> _impl;
     };
 
     /** Exception thrown on certificate validation error */
