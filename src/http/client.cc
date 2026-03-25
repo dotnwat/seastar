@@ -22,7 +22,6 @@
 
 #include <cassert>
 #include <concepts>
-#include <gnutls/gnutls.h>
 #include <memory>
 #include <optional>
 #include <stdexcept>
