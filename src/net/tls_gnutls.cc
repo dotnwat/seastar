@@ -18,6 +18,7 @@
 /*
  * Copyright 2015 Cloudius Systems
  */
+#include "tls-impl.hh"
 
 
 #include <any>
@@ -1118,7 +1119,7 @@ namespace tls {
  * of these, since we handle handshake etc.
  *
  */
-class session : public enable_lw_shared_from_this<session> {
+class session : public enable_shared_from_this<session>, public tls::session_impl {
 public:
     enum class type
         : uint32_t {
@@ -1320,7 +1321,7 @@ public:
     future<> do_force_rehandshake() {
         return do_handshake_invoke(gnutls_rehandshake);
     }
-    future<> force_rehandshake() {
+    future<> force_rehandshake() override {
         if (!_connected) {
             return handshake();
         }
@@ -1440,7 +1441,7 @@ public:
         }
     }
 
-    future<temporary_buffer<char>> get() {
+    future<temporary_buffer<char>> get() override {
         if (_error) {
             return make_exception_future<temporary_buffer<char>>(_error);
         }
@@ -1566,7 +1567,7 @@ private:
     }
 
 public:
-    future<> put(std::span<temporary_buffer<char>> bufs) {
+    future<> put(std::span<temporary_buffer<char>> bufs) override {
         if (_error) {
             return make_exception_future<>(_error);
         }
@@ -1747,7 +1748,7 @@ public:
         // below, get pre-empted, have "close()" finish, get freed, and
         // then call wait_for_eof on stale pointer.
     }
-    void close() noexcept {
+    void close() noexcept override {
         // only do once.
         if (!std::exchange(_shutdown, true)) {
             auto me = shared_from_this();
@@ -1777,13 +1778,13 @@ public:
         }
     }
     // helper for sink
-    future<> flush() noexcept {
+    future<> flush() noexcept override {
         return with_semaphore(_out_sem, 1, [this] {
             return _out.flush();
         });
     }
 
-    seastar::net::connected_socket_impl& socket() const {
+    seastar::net::connected_socket_impl& socket() const override {
         return *_sock;
     }
 
@@ -1808,12 +1809,12 @@ public:
         return futurize_invoke(f, std::forward<Args>(args)...);
     }
 
-    future<bool> is_resumed() {
+    future<bool> is_resumed() override {
         return state_checked_access([this] {
             return gnutls_session_is_resumed(*this) != 0;
         });
     }
-    future<session_data> get_session_resume_data() {
+    future<session_data> get_session_resume_data() override {
         return state_checked_access([this] {
             /**
              * Session ticket data is not available just because handshake
@@ -1834,12 +1835,12 @@ public:
             return session_data(tmp.data, tmp.data + tmp.size);
         });
     }
-    future<std::optional<session_dn>> get_distinguished_name() {
+    future<std::optional<session_dn>> get_distinguished_name() override {
         return state_checked_access([this] {
             return extract_dn_information();
         });
     }
-    future<std::vector<subject_alt_name>> get_alt_name_information(std::unordered_set<subject_alt_name_type> types) {
+    future<std::vector<subject_alt_name>> get_alt_name_information(std::unordered_set<subject_alt_name_type> types) override {
         return state_checked_access([this](std::unordered_set<subject_alt_name_type> types) {
             std::vector<subject_alt_name> res;
 
@@ -1916,7 +1917,7 @@ public:
         }, std::move(types));
     }
 
-    future<std::vector<certificate_data>> get_peer_certificate_chain() {
+    future<std::vector<certificate_data>> get_peer_certificate_chain() override {
         return state_checked_access([this] {
             unsigned int list_size = 0;
             const gnutls_datum_t* client_cert_list = gnutls_certificate_get_peers(*this, &list_size);
@@ -1932,7 +1933,7 @@ public:
         });
     }
 
-    future<std::optional<sstring>> get_selected_alpn_protocol() {
+    future<std::optional<sstring>> get_selected_alpn_protocol() override {
         return state_checked_access([this]() -> std::optional<sstring> {
             gnutls_datum_t selected_proto_datum = { nullptr, 0 };
             int rv = gnutls_alpn_get_selected_protocol(*this, &selected_proto_datum);
@@ -1945,13 +1946,13 @@ public:
 
     struct session_ref;
 
-    future<sstring> get_cipher_suite() {
+    future<sstring> get_cipher_suite() override {
         return state_checked_access([this] {
             return sstring(gnutls_ciphersuite_get(*this));
         });
     }
 
-    future<sstring> get_protocol_version() {
+    future<sstring> get_protocol_version() override {
         return state_checked_access([this]() {
             return sstring(gnutls_protocol_get_name(gnutls_protocol_get_version(*this)));
         });
@@ -2030,7 +2031,7 @@ struct session::session_ref {
     session_ref& operator=(session_ref&&) = default;
     session_ref& operator=(const session_ref&) = default;
 
-    lw_shared_ptr<session> _session;
+    shared_ptr<session> _session;
 };
 
 class tls_connected_socket_impl : public net::connected_socket_impl, public session::session_ref {
@@ -2259,13 +2260,13 @@ future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cr
 }
 
 future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, tls_options options) {
-    session::session_ref sess(make_lw_shared<session>(session::type::CLIENT, std::move(cred), std::move(s),  options));
+    session::session_ref sess(make_shared<session>(session::type::CLIENT, std::move(cred), std::move(s),  options));
     connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
     return make_ready_future<connected_socket>(std::move(sock));
 }
 
 future<connected_socket> tls::wrap_server(shared_ptr<server_credentials> cred, connected_socket&& s) {
-    session::session_ref sess(make_lw_shared<session>(session::type::SERVER, std::move(cred), std::move(s)));
+    session::session_ref sess(make_shared<session>(session::type::SERVER, std::move(cred), std::move(s)));
     connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
     return make_ready_future<connected_socket>(std::move(sock));
 }
