@@ -4298,6 +4298,7 @@ void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_
     // Install the crypto provider before anything else, so it is
     // available to all reactors from the moment they start.
     crypto::set_provider(reactor_opts.crypto_provider.get_selected_candidate()());
+    crypto::provider().get_tls_backend().init_error_codes();
 
     bool use_transparent_hugepages = !reactor_opts.overprovisioned;
 

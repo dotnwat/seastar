@@ -64,4 +64,7 @@ std::unique_ptr<dh_params_impl> make_dh_params(dh_params::level);
 /// Create GnuTLS DH parameters from raw data.
 std::unique_ptr<dh_params_impl> make_dh_params(const blob&, x509_crt_format);
 
+/// Initialize TLS error codes with GnuTLS values.
+void init_error_codes();
+
 } // namespace seastar::tls::gnutls
