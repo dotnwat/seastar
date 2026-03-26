@@ -68,6 +68,7 @@ namespace tls {
     class certificate_credentials;
     class credentials_builder;
     class credentials_impl;
+    class dh_params_impl;
 
     /**
      * Diffie-Hellman parameters for
@@ -95,11 +96,11 @@ namespace tls {
 
         /** loads a key from file */
         static future<dh_params> from_file(const sstring&, x509_crt_format);
+        class impl; // defined by each backend
     private:
-        class impl;
         friend class server_credentials;
         friend class certificate_credentials;
-        std::unique_ptr<impl> _impl;
+        std::unique_ptr<dh_params_impl> _impl;
     };
 
     class x509_cert {

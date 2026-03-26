@@ -154,7 +154,7 @@ static auto get_gtls_string = [](auto func, auto... args) noexcept {
 
 }
 
-class tls::dh_params::impl : gnutlsobj {
+class tls::dh_params::impl : gnutlsobj, public tls::dh_params_impl {
     static gnutls_sec_param_t to_gnutls_level(level l) {
         switch (l) {
             case level::LEGACY: return GNUTLS_SEC_PARAM_LEGACY;
@@ -225,11 +225,12 @@ private:
 #endif
 };
 
-tls::dh_params::dh_params(level lvl) : _impl(std::make_unique<impl>(lvl))
-{}
+tls::dh_params::dh_params(level lvl)
+    : _impl(crypto::provider().get_tls_backend().make_dh_params(lvl)) {
+}
 
 tls::dh_params::dh_params(const blob& b, x509_crt_format fmt)
-        : _impl(std::make_unique<impl>(b, fmt)) {
+    : _impl(crypto::provider().get_tls_backend().make_dh_params(b, fmt)) {
 }
 
 tls::dh_params::~dh_params() {
@@ -370,14 +371,15 @@ public:
                         gnutls_x509_crt_fmt_t(fmt), password.c_str()));
     }
     void dh_params(const tls::dh_params& dh) override {
+        auto& gnutls_impl = static_cast<tls::dh_params::impl&>(*dh._impl);
 #if GNUTLS_VERSION_NUMBER >= 0x030506
-        auto sec_param = dh._impl->sec_param();
+        auto sec_param = gnutls_impl.sec_param();
         if (sec_param) {
             gnutls_certificate_set_known_dh_params(*this, *sec_param);
             return;
         }
 #endif
-        auto cpy = std::make_unique<tls::dh_params::impl>(*dh._impl);
+        auto cpy = std::make_unique<tls::dh_params::impl>(gnutls_impl);
         gnutls_certificate_set_dh_params(*this, *cpy);
         _dh_params = std::move(cpy);
     }
@@ -1836,6 +1838,14 @@ std::vector<uint8_t> tls::gnutls::generate_session_ticket_key() {
 
 shared_ptr<tls::credentials_impl> tls::gnutls::make_credentials_impl() {
     return tls::certificate_credentials::impl::create();
+}
+
+std::unique_ptr<tls::dh_params_impl> tls::gnutls::make_dh_params(tls::dh_params::level lvl) {
+    return std::make_unique<tls::dh_params::impl>(lvl);
+}
+
+std::unique_ptr<tls::dh_params_impl> tls::gnutls::make_dh_params(const tls::blob& b, tls::x509_crt_format fmt) {
+    return std::make_unique<tls::dh_params::impl>(b, fmt);
 }
 
 } // namespace seastar

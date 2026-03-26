@@ -29,14 +29,13 @@
 #include <vector>
 
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/net/tls.hh>
 
 namespace seastar::net { class connected_socket_impl; }
 namespace seastar::tls {
     class session_impl;
     class credentials_impl;
-    class certificate_credentials;
-    enum class session_type;
-    struct tls_options;
+    class dh_params_impl;
 }
 
 namespace seastar::crypto {
@@ -65,6 +64,12 @@ public:
 
     /// \brief Create a backend-specific credentials implementation.
     virtual shared_ptr<tls::credentials_impl> make_credentials_impl() = 0;
+
+    /// \brief Create backend-specific DH parameters from a security level.
+    virtual std::unique_ptr<tls::dh_params_impl> make_dh_params(tls::dh_params::level) = 0;
+
+    /// \brief Create backend-specific DH parameters from raw data.
+    virtual std::unique_ptr<tls::dh_params_impl> make_dh_params(const tls::blob&, tls::x509_crt_format) = 0;
 };
 
 /// \brief Abstract interface for cryptographic primitives.

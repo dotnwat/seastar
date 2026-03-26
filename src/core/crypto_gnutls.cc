@@ -20,8 +20,8 @@
  */
 
 #include "crypto.hh"
+#include "../net/tls-impl.hh"
 #include "../net/tls_gnutls.hh"
-#include <seastar/net/tls.hh>
 #include <seastar/net/stack.hh>
 #include <seastar/util/defer.hh>
 #include <gnutls/crypto.h>
@@ -41,6 +41,8 @@ public:
     const std::error_category& error_category() override;
     std::vector<uint8_t> generate_session_ticket_key() override;
     shared_ptr<tls::credentials_impl> make_credentials_impl() override;
+    std::unique_ptr<tls::dh_params_impl> make_dh_params(tls::dh_params::level) override;
+    std::unique_ptr<tls::dh_params_impl> make_dh_params(const tls::blob&, tls::x509_crt_format) override;
 };
 
 class gnutls_crypto_provider final : public crypto_provider {
@@ -92,6 +94,14 @@ std::vector<uint8_t> gnutls_tls_backend::generate_session_ticket_key() {
 
 shared_ptr<tls::credentials_impl> gnutls_tls_backend::make_credentials_impl() {
     return tls::gnutls::make_credentials_impl();
+}
+
+std::unique_ptr<tls::dh_params_impl> gnutls_tls_backend::make_dh_params(tls::dh_params::level lvl) {
+    return tls::gnutls::make_dh_params(lvl);
+}
+
+std::unique_ptr<tls::dh_params_impl> gnutls_tls_backend::make_dh_params(const tls::blob& b, tls::x509_crt_format fmt) {
+    return tls::gnutls::make_dh_params(b, fmt);
 }
 
 tls_backend& gnutls_crypto_provider::get_tls_backend() {

@@ -117,6 +117,15 @@ void visit_blobs(Blobs& blobs, Visitor&& visitor) {
 
 namespace seastar::tls {
 
+/// Abstract interface for DH parameters.
+///
+/// GnuTLS has a full implementation; OpenSSL's is a stub.
+class dh_params_impl {
+public:
+    virtual ~dh_params_impl() = default;
+};
+
+
 /// Abstract interface for TLS credentials.
 ///
 /// This is the base class for backend-specific certificate_credentials::impl
