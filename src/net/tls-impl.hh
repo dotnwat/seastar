@@ -152,6 +152,14 @@ public:
     // GnuTLS-specific — no-op for other backends.
     virtual void set_priority_string(const sstring&) {}
 
+    // OpenSSL-specific — no-op for other backends.
+    virtual void set_cipher_string(const sstring&) {}
+    virtual void set_ciphersuites(const sstring&) {}
+    virtual void enable_server_precedence() {}
+    virtual void set_minimum_tls_version(tls_version) {}
+    virtual void set_maximum_tls_version(tls_version) {}
+    virtual void enable_tls_renegotiation() {}
+
     // Flag for lazy system trust loading.
     bool _load_system_trust = false;
 };
