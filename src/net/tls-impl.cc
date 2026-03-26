@@ -19,10 +19,19 @@
  * Copyright 2015 Cloudius Systems
  */
 
+#include <chrono>
+#include <filesystem>
 #include <sys/stat.h>
 
+#include <boost/range/adaptor/map.hpp>
+#include <boost/range/algorithm/copy.hpp>
+
 #include <seastar/core/file.hh>
+#include <seastar/core/fsnotify.hh>
+#include <seastar/core/loop.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/thread.hh>
+#include <seastar/core/timer.hh>
 
 #include <seastar/util/variant_utils.hh>
 
@@ -432,6 +441,264 @@ std::string_view tls::format_as(tls_version v) {
         case tls_version::tlsv1_3: return "TLSv1.3";
         default: return "UNKNOWN";
     }
+}
+
+using namespace std::chrono_literals;
+
+class tls::reloadable_credentials_base {
+public:
+    using delay_type = std::chrono::milliseconds;
+    static inline constexpr delay_type default_tolerance = 500ms;
+
+    class reloading_builder
+        : public credentials_builder
+        , public enable_shared_from_this<reloading_builder>
+    {
+    public:
+        using time_point = std::chrono::system_clock::time_point;
+
+        reloading_builder(credentials_builder b, reload_callback_ex cb, reloadable_credentials_base* creds, delay_type delay)
+            : credentials_builder(std::move(b))
+            , _cb(std::move(cb))
+            , _creds(creds)
+            , _delay(delay)
+        {}
+        future<> init() {
+            std::vector<future<>> futures;
+            visit_blobs(_blobs, make_visitor(
+                [&](const std::string_view&, const x509_simple& info) {
+                    _all_files.emplace(info.file.filename);
+                },
+                [&](const std::string_view&, const x509_key& info) {
+                    _all_files.emplace(info.cert_file.filename);
+                    _all_files.emplace(info.key_file.filename);
+                },
+                [&](const std::string_view&, const pkcs12_simple& info) {
+                    _all_files.emplace(info.file.filename);
+                }
+            ));
+            return parallel_for_each(_all_files, [this](auto& f) {
+                if (!f.empty()) {
+                    return add_watch(f).discard_result();
+                }
+                return make_ready_future<>();
+            }).finally([me = shared_from_this()] {});
+        }
+        void start() {
+            // run the loop in a thread. makes code almost readable.
+            (void)async(std::bind(&reloading_builder::run, this)).finally([me = shared_from_this()] {});
+        }
+        void run() {
+            while (_creds) {
+                try {
+                    auto events = _fsn.wait().get();
+                    if (events.empty() && _creds == nullptr) {
+                        return;
+                    }
+                    rebuild(events);
+                    _timer.cancel();
+                } catch (...) {
+                    if (!_timer.armed()) {
+                        _timer.set_callback([this, ep = std::current_exception()]() mutable {
+                            do_callback(std::move(ep));
+                        });
+                        _timer.arm(_delay);
+                    }
+                }
+            }
+        }
+        void detach() {
+            _creds = nullptr;
+            _cb = {};
+            _fsn.shutdown();
+            _timer.cancel();
+        }
+    private:
+        using fsnotifier = experimental::fsnotifier;
+
+        // called from seastar::thread
+        void rebuild(const std::vector<fsnotifier::event>& events) {
+            for (auto& e : events) {
+                auto i = _watches.find(e.id);
+                if (i != _watches.end()) {
+                    auto& filename = i->second.second;
+                    if (_all_files.count(filename)) {
+                        _files[filename] = e.mask;
+                    }
+                    _watches.erase(i);
+                }
+            }
+            auto num_changed = 0;
+
+            auto maybe_reload = [&](const sstring& filename, buffer_type& dst) {
+                if (filename.empty() || !_files.count(filename)) {
+                    return;
+                }
+                add_dir_watch(filename);
+                try {
+                    add_watch(filename).get();
+                } catch (...) {
+                    return;
+                }
+                temporary_buffer<char> buf = read_fully(filename, "reloading").get();
+                dst = to_buffer(buf);
+                ++num_changed;
+            };
+            visit_blobs(_blobs, make_visitor(
+                [&](const std::string_view&, x509_simple& info) {
+                    maybe_reload(info.file.filename, info.data);
+                },
+                [&](const std::string_view&, x509_key& info) {
+                    maybe_reload(info.cert_file.filename, info.cert);
+                    maybe_reload(info.key_file.filename, info.key);
+                },
+                [&](const std::string_view&, pkcs12_simple& info) {
+                    maybe_reload(info.file.filename, info.data);
+                }
+            ));
+            if (num_changed == 0) {
+                return;
+            }
+            try {
+                set_session_resume_mode(_session_resume_mode);
+                if (_creds) {
+                    _creds->rebuild(*this);
+                }
+            } catch (...) {
+                if (std::any_of(_files.begin(), _files.end(), [](auto& p) { return p.second == fsnotifier::flags::ignored; })) {
+                    return;
+                }
+                throw;
+            }
+            do_callback();
+            on_success();
+        }
+        void on_success() {
+            _files.clear();
+            auto i = _watches.begin();
+            auto e = _watches.end();
+            while (i != e) {
+                if (!_all_files.count(i->second.second)) {
+                    i = _watches.erase(i);
+                    continue;
+                }
+                ++i;
+            }
+        }
+        void do_callback(std::exception_ptr ep = {}) {
+            if (_cb && !_files.empty()) {
+                _cb(*this, boost::copy_range<std::unordered_set<sstring>>(_files | boost::adaptors::map_keys), std::move(ep)).get();
+            }
+        }
+        // called from seastar::thread
+        fsnotifier::watch_token add_dir_watch(const sstring& filename) {
+            auto dir = std::filesystem::path(filename).parent_path();
+            for (;;) {
+                try {
+                    return add_watch(dir.native(), fsnotifier::flags::create_child | fsnotifier::flags::move).get();
+                } catch (...) {
+                    auto parent = dir.parent_path();
+                    if (parent.empty() || dir == parent) {
+                        throw;
+                    }
+                    dir = std::move(parent);
+                    continue;
+                }
+            }
+        }
+        future<fsnotifier::watch_token> add_watch(const sstring& filename, fsnotifier::flags flags = fsnotifier::flags::close_write|fsnotifier::flags::delete_self) {
+            return _fsn.create_watch(filename, flags).then([this, filename = filename](fsnotifier::watch w) {
+                auto t = w.token();
+                if (_watches.count(t)) {
+                    w.release();
+                } else {
+                    _watches.emplace(t, std::make_pair(std::move(w), filename));
+                }
+                return t;
+            });
+        }
+
+        reload_callback_ex _cb;
+        reloadable_credentials_base* _creds;
+        fsnotifier _fsn;
+        std::unordered_map<fsnotifier::watch_token, std::pair<fsnotifier::watch, sstring>> _watches;
+        std::unordered_map<sstring, fsnotifier::flags> _files;
+        std::unordered_set<sstring> _all_files;
+        timer<> _timer;
+        delay_type _delay;
+    };
+    reloadable_credentials_base(credentials_builder builder, reload_callback_ex cb, delay_type delay = default_tolerance)
+        : _builder(seastar::make_shared<reloading_builder>(std::move(builder), std::move(cb), this, delay))
+    {
+        _builder->start();
+    }
+    future<> init() {
+        return _builder->init();
+    }
+    virtual ~reloadable_credentials_base() {
+        _builder->detach();
+    }
+    virtual void rebuild(const credentials_builder&) = 0;
+private:
+    shared_ptr<reloading_builder> _builder;
+};
+
+template<typename Base>
+class tls::reloadable_credentials : public Base, public tls::reloadable_credentials_base {
+public:
+    reloadable_credentials(credentials_builder builder, reload_callback_ex cb, Base b, delay_type delay = default_tolerance)
+        : Base(std::move(b))
+        , tls::reloadable_credentials_base(std::move(builder), std::move(cb), delay)
+    {}
+    void rebuild(const credentials_builder&) override;
+};
+
+template<>
+void tls::reloadable_credentials<tls::certificate_credentials>::rebuild(const credentials_builder& builder) {
+    builder.rebuild(*this);
+}
+
+template<>
+void tls::reloadable_credentials<tls::server_credentials>::rebuild(const credentials_builder& builder) {
+    builder.rebuild(*this);
+}
+
+void tls::credentials_builder::rebuild(certificate_credentials& creds) const {
+    auto tmp = build_certificate_credentials();
+    creds._impl = std::move(tmp->_impl);
+}
+
+void tls::credentials_builder::rebuild(server_credentials& creds) const {
+    auto tmp = build_server_credentials();
+    creds._impl = std::move(tmp->_impl);
+}
+
+future<shared_ptr<tls::certificate_credentials>> tls::credentials_builder::build_reloadable_certificate_credentials(reload_callback_ex cb, std::optional<std::chrono::milliseconds> tolerance) const {
+    auto creds = seastar::make_shared<reloadable_credentials<tls::certificate_credentials>>(*this, std::move(cb), std::move(*build_certificate_credentials()), tolerance.value_or(reloadable_credentials_base::default_tolerance));
+    return creds->init().then([creds] {
+        return make_ready_future<shared_ptr<tls::certificate_credentials>>(creds);
+    });
+}
+
+future<shared_ptr<tls::server_credentials>> tls::credentials_builder::build_reloadable_server_credentials(reload_callback_ex cb, std::optional<std::chrono::milliseconds> tolerance) const {
+    auto creds = seastar::make_shared<reloadable_credentials<tls::server_credentials>>(*this, std::move(cb), std::move(*build_server_credentials()), tolerance.value_or(reloadable_credentials_base::default_tolerance));
+    return creds->init().then([creds] {
+        return make_ready_future<shared_ptr<tls::server_credentials>>(creds);
+    });
+}
+
+future<shared_ptr<tls::certificate_credentials>> tls::credentials_builder::build_reloadable_certificate_credentials(reload_callback cb, std::optional<std::chrono::milliseconds> tolerance) const {
+    return build_reloadable_certificate_credentials([cb = std::move(cb)](const credentials_builder&, const std::unordered_set<sstring>& files, std::exception_ptr p) {
+        cb(files, p);
+        return make_ready_future<>();
+    }, tolerance);
+}
+
+future<shared_ptr<tls::server_credentials>> tls::credentials_builder::build_reloadable_server_credentials(reload_callback cb, std::optional<std::chrono::milliseconds> tolerance) const {
+    return build_reloadable_server_credentials([cb = std::move(cb)](const credentials_builder&, const std::unordered_set<sstring>& files, std::exception_ptr p) {
+        cb(files, p);
+        return make_ready_future<>();
+    }, tolerance);
 }
 
 const std::error_category& tls::error_category() {
