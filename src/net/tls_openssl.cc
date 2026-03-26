@@ -1460,23 +1460,29 @@ SEASTAR_INTERNAL_END_IGNORE_DEPRECATIONS
         // only do once.
         if (!std::exchange(_shutdown, true)) {
             tls_log.trace("{} close: performing shutdown", *this);
-            // running in background. try to bye-handshake us nicely, but after 10s we forcefully close.
-            engine().run_in_background(with_timeout(
-              timer<>::clock::now() + std::chrono::seconds(10), shutdown())
-              .finally([this] {
-                  _eof = true;
-                  return _in.close();
-              }).finally([this] {
-                  return _out.close();
-              }).finally([this] {
-                  // make sure to wait for handshake attempt to leave semaphores. Must be in same order as
-                  // handshake aqcuire, because in worst case, we get here while a reader is attempting
-                  // re-handshake.
-                  return with_semaphore(_in_sem, 1, [this] {
-                      return with_semaphore(_out_sem, 1, [] { });
-                  });
-              }).handle_exception([me = shared_from_this()](std::exception_ptr){
-              }).discard_result());
+            auto me = shared_from_this();
+            auto f = _options.bye_timeout.count() > 0 && (_options.wait_for_eof_on_shutdown._value == true)
+                ? with_timeout(timer<>::clock::now() + _options.bye_timeout, shutdown())
+                : make_ready_future<>();
+            engine().run_in_background(std::move(f).finally([this] {
+                _eof = true;
+                try {
+                    (void)_in.close().handle_exception([](std::exception_ptr) {});
+                } catch (...) {
+                }
+                try {
+                    (void)_out.close().handle_exception([](std::exception_ptr) {});
+                } catch (...) {
+                }
+                // make sure to wait for handshake attempt to leave semaphores. Must be in same order as
+                // handshake acquire, because in worst case, we get here while a reader is attempting
+                // re-handshake.
+                return with_semaphore(_in_sem, 1, [this] {
+                    return with_semaphore(_out_sem, 1, [] {});
+                });
+            }).then_wrapped([me = std::move(me)](future<> f) { // must keep object alive until here.
+                f.ignore_ready_future();
+            }));
         }
     }
     // helper for sink
@@ -2114,7 +2120,8 @@ int bio_write_ex(BIO* b, const char * data, size_t dlen, size_t * written) {
         size_t n;
 
         if (!session->_output_pending.failed()) {
-            auto buf = temporary_buffer<char>(data, dlen);
+            auto buf = temporary_buffer<char>(dlen);
+            std::memcpy(buf.get_write(), data, dlen);
             n = buf.size();
             session->_output_pending = session->_out.put(std::move(buf));
             tls_log.trace("{} bio_write_ex: Appended {} bytes to output pending", *session, n);
