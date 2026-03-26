@@ -177,6 +177,30 @@ void tls::credentials_builder::set_alpn_protocols(const std::vector<sstring>& pr
     _alpn_protocols = protocols;
 }
 
+void tls::credentials_builder::set_cipher_string(const sstring& s) {
+    _cipher_string = s;
+}
+
+void tls::credentials_builder::set_ciphersuites(const sstring& s) {
+    _ciphersuites = s;
+}
+
+void tls::credentials_builder::enable_server_precedence() {
+    _enable_server_precedence = true;
+}
+
+void tls::credentials_builder::set_minimum_tls_version(tls_version v) {
+    _min_tls_version = v;
+}
+
+void tls::credentials_builder::set_maximum_tls_version(tls_version v) {
+    _max_tls_version = v;
+}
+
+void tls::credentials_builder::enable_tls_renegotiation() {
+    _enable_tls_renegotiation = true;
+}
+
 std::string_view tls::format_as(subject_alt_name_type type) {
     switch (type) {
         case subject_alt_name_type::dnsname:
