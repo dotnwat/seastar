@@ -277,6 +277,7 @@ namespace tls {
         class impl; // defined by each backend
     private:
         friend class session;
+        friend class ossl_session;
         friend class server_session;
         friend class server_credentials;
         friend class credentials_builder;

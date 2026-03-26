@@ -23,12 +23,12 @@
 // The data flow in the openssl-based seastar tls implementation looks like the following. The session's put/get()
 // methods delegate to openssl functions, which perform the openssl handshake, encryption and decryption, and then they
 // write the raw data into a custom BIO object. This custom BIO object is implemented in this file, it is specific to
-// seastar and it delegates the write/read methods to the seastar::tls::session's data_sink/data_source (which are the
+// seastar and it delegates the write/read methods to the seastar::tls::ossl_session's data_sink/data_source (which are the
 // interfaces around the underlying seastar connected socket).
 //
 //        +----------------------------+      +-------------------------------------+     +-------------+    +----------------------------+   +------+
 //        |                            |      |                                     |     |             |    |                            |   |      |
-// ------->    seastar::tls::session   +------> SSL_{do_handshake|write_ex|read_ex} +-----> custom BIO  +---->    data_sink/data_source   +--->  OS  |
+// ------->    seastar::tls::ossl_session   +------> SSL_{do_handshake|write_ex|read_ex} +-----> custom BIO  +---->    data_sink/data_source   +--->  OS  |
 //        |                            |      |                                     |     |             |    |      (seastar socket)      |   |      |
 //        +----------------------------+      +-------------------------------------+     +-------------+    +----------------------------+   +------+
 
@@ -84,8 +84,9 @@ module seastar;
 #include "../core/crypto.hh"
 #endif
 
-template <> struct fmt::formatter<seastar::tls::session> : public fmt::formatter<string_view> {
-    auto format(const seastar::tls::session& s, fmt::format_context& ctx) const -> decltype(ctx.out());
+namespace seastar::tls { class ossl_session; }
+template <> struct fmt::formatter<seastar::tls::ossl_session> : public fmt::formatter<string_view> {
+    auto format(const seastar::tls::ossl_session& s, fmt::format_context& ctx) const -> decltype(ctx.out());
 };
 
 namespace seastar {
@@ -341,12 +342,14 @@ private:
 
 BIO_METHOD* get_method();
 
+namespace tls {
+
 /// TODO: Implement the DH params impl struct
 ///
-class tls::dh_params::impl : public tls::dh_params_impl {
+class ossl_dh_params_impl : public dh_params_impl {
 public:
-    explicit impl(level) {}
-    impl(const blob&, x509_crt_format){}
+    explicit ossl_dh_params_impl(tls::dh_params::level) {}
+    ossl_dh_params_impl(const tls::blob&, tls::x509_crt_format){}
 
     const EVP_PKEY* get() const { return _pkey.get(); }
 
@@ -356,7 +359,7 @@ private:
     evp_pkey_ptr _pkey;
 };
 
-class tls::certificate_credentials::impl : public tls::credentials_impl {
+class ossl_credentials_impl : public credentials_impl {
     struct certkey_pair {
         x509_ptr cert;
         evp_pkey_ptr key;
@@ -377,7 +380,7 @@ public:
     static int verify_callback(int preverify_ok, X509_STORE_CTX* store_ctx) {
         // Grab the 'this' pointer from the stores generic data cache, it should always exist
         auto store = X509_STORE_CTX_get0_store(store_ctx);
-        auto credential_impl = static_cast<impl*>(X509_STORE_get_ex_data(store, credential_store_idx));
+        auto credential_impl = static_cast<ossl_credentials_impl*>(X509_STORE_get_ex_data(store, credential_store_idx));
         SEASTAR_ASSERT(credential_impl != nullptr);
         // Store a pointer to the current connection certificate within the impl instance
         auto cert = X509_STORE_CTX_get_current_cert(store_ctx);
@@ -386,7 +389,7 @@ public:
         return preverify_ok;
     }
 
-    impl() : _creds([] {
+    ossl_credentials_impl() : _creds([] {
         auto store = X509_STORE_new();
         if (store == nullptr) {
             throw std::bad_alloc();
@@ -690,14 +693,14 @@ public:
 
     void set_priority_string(const sstring&) override {} // GnuTLS-specific, no-op for OpenSSL
 
-    static shared_ptr<impl> create() {
-        return make_shared<impl>();
+    static shared_ptr<ossl_credentials_impl> create() {
+        return make_shared<ossl_credentials_impl>();
     }
 
 private:
     friend class certificate_credentials;
     friend class credentials_builder;
-    friend class session;
+    friend class ossl_session;
 
     void set_load_system_trust(bool trust) {
         _load_system_trust = trust;
@@ -726,8 +729,6 @@ private:
     std::vector<sstring> _alpn_protocols;
 };
 
-namespace tls {
-
 int session_ticket_cb(SSL * s, unsigned char key_name[16],
                       unsigned char iv[EVP_MAX_IV_LENGTH],
                       EVP_CIPHER_CTX * ctx, EVP_MAC_CTX *hctx, int enc);
@@ -743,7 +744,7 @@ int session_ticket_cb(SSL * s, unsigned char key_name[16],
  * The implmentation below relies on OpenSSL, for the gnutls implementation
  * see tls.cc and the CMake option 'Seastar_USE_OPENSSL'
  */
-class session : public enable_shared_from_this<session>, public session_impl {
+class ossl_session : public enable_shared_from_this<ossl_session>, public session_impl {
 public:
     using buf_type = temporary_buffer<char>;
     using frag_iter = net::fragment*;
@@ -769,7 +770,7 @@ public:
         }
     }
 
-    session(session_type t, shared_ptr<tls::certificate_credentials> creds,
+    ossl_session(session_type t, shared_ptr<tls::certificate_credentials> creds,
             std::unique_ptr<net::connected_socket_impl> sock, tls_options options = {})
       : _sock(std::move(sock))
       , _local_address([this]() -> sstring {
@@ -786,7 +787,7 @@ public:
                 return "DISCONNECTED";
             }
         }())
-      , _creds(static_pointer_cast<tls::certificate_credentials::impl>(creds->_impl))
+      , _creds(static_pointer_cast<ossl_credentials_impl>(creds->_impl))
       , _in(_sock->source())
       , _out(_sock->sink())
       , _in_sem(1)
@@ -844,12 +845,12 @@ public:
         _options.session_resume_data.clear();
     }
 
-    session(session_type t, shared_ptr<certificate_credentials> creds,
+    ossl_session(session_type t, shared_ptr<certificate_credentials> creds,
             connected_socket sock,
             tls_options options = {})
-            : session(t, std::move(creds), net::get_impl::get(std::move(sock)), options) {}
+            : ossl_session(t, std::move(creds), net::get_impl::get(std::move(sock)), options) {}
 
-    ~session() {
+    ~ossl_session() {
         SEASTAR_ASSERT(_output_pending.available());
     }
 
@@ -1541,7 +1542,7 @@ SEASTAR_INTERNAL_END_IGNORE_DEPRECATIONS
         }
         if (!connected()) {
             return handshake().then([this, f = std::move(f), ...args = std::forward<Args>(args)]() mutable {
-                return session::state_checked_access(std::move(f), std::forward<Args>(args)...);
+                return ossl_session::state_checked_access(std::move(f), std::forward<Args>(args)...);
             });
         }
         return futurize_invoke(f, std::forward<Args>(args)...);
@@ -1952,7 +1953,7 @@ private:
     std::unique_ptr<net::connected_socket_impl> _sock;
     sstring _local_address;
     sstring _remote_address;
-    shared_ptr<tls::certificate_credentials::impl> _creds;
+    shared_ptr<ossl_credentials_impl> _creds;
     data_source _in;
     data_sink _out;
     std::exception_ptr _error;
@@ -1992,7 +1993,7 @@ private:
 int session_ticket_cb(SSL * s, unsigned char key_name[16],
                       unsigned char iv[EVP_MAX_IV_LENGTH],
                       EVP_CIPHER_CTX * ctx, EVP_MAC_CTX *hctx, int enc) {
-    auto * sess = static_cast<const session *>(SSL_get_ex_data(s, SSL_EX_DATA_SESSION));
+    auto * sess = static_cast<const ossl_session *>(SSL_get_ex_data(s, SSL_EX_DATA_SESSION));
     std::span<unsigned char, 16> key_name_span(key_name, 16);
     const auto & gen_key_name = sess->_creds->get_session_ticket_keys().key_name;
     const auto & aes_key = sess->_creds->get_session_ticket_keys().aes_key;
@@ -2038,11 +2039,11 @@ int session_ticket_cb(SSL * s, unsigned char key_name[16],
 }
 
 
-tls::session* unwrap_bio_ptr(void * ptr) {
-    return static_cast<tls::session*>(ptr);
+ossl_session* unwrap_bio_ptr(void * ptr) {
+    return static_cast<ossl_session*>(ptr);
 }
 
-tls::session* unwrap_bio_ptr(BIO * b) {
+ossl_session* unwrap_bio_ptr(BIO * b) {
     return unwrap_bio_ptr(BIO_get_data(b));
 }
 
@@ -2220,7 +2221,7 @@ shared_ptr<tls::session_impl> tls::openssl::make_session(
         shared_ptr<tls::certificate_credentials> creds,
         std::unique_ptr<net::connected_socket_impl> sock,
         const tls::tls_options& options) {
-    return seastar::make_shared<tls::session>(type, std::move(creds), std::move(sock), options);
+    return seastar::make_shared<ossl_session>(type, std::move(creds), std::move(sock), options);
 }
 
 const std::error_category& tls::openssl::error_category() {
@@ -2235,15 +2236,15 @@ std::vector<uint8_t> tls::openssl::generate_session_ticket_key() {
 }
 
 shared_ptr<tls::credentials_impl> tls::openssl::make_credentials_impl() {
-    return tls::certificate_credentials::impl::create();
+    return ossl_credentials_impl::create();
 }
 
 std::unique_ptr<tls::dh_params_impl> tls::openssl::make_dh_params(tls::dh_params::level lvl) {
-    return std::make_unique<tls::dh_params::impl>(lvl);
+    return std::make_unique<ossl_dh_params_impl>(lvl);
 }
 
 std::unique_ptr<tls::dh_params_impl> tls::openssl::make_dh_params(const tls::blob& b, tls::x509_crt_format fmt) {
-    return std::make_unique<tls::dh_params::impl>(b, fmt);
+    return std::make_unique<ossl_dh_params_impl>(b, fmt);
 }
 
 void tls::openssl::init_error_codes() {
@@ -2269,8 +2270,8 @@ void tls::openssl::init_error_codes() {
 
 } // namespace seastar
 
-auto fmt::formatter<seastar::tls::session>::format(
-    const seastar::tls::session& s, fmt::format_context& ctx) const -> decltype(ctx.out()) {
+auto fmt::formatter<seastar::tls::ossl_session>::format(
+    const seastar::tls::ossl_session& s, fmt::format_context& ctx) const -> decltype(ctx.out()) {
 
     return fmt::format_to(ctx.out(), "{}:{}:{} -",
         s.get_type_string(), s.local_address(), s.remote_address());
