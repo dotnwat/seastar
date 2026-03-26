@@ -109,4 +109,7 @@ void set_provider(std::unique_ptr<crypto_provider> p);
 /// \brief Create a GnuTLS-backed crypto provider.
 std::unique_ptr<crypto_provider> create_gnutls_provider();
 
+/// \brief Create an OpenSSL-backed crypto provider.
+std::unique_ptr<crypto_provider> create_openssl_provider();
+
 } // namespace seastar::crypto

@@ -3894,9 +3894,10 @@ static program_options::selection_value<crypto_provider_factory> create_crypto_p
     auto deleter = [] (crypto_provider_factory* p) { delete p; };
 
     candidates.push_back({"gnutls", {new crypto_provider_factory(crypto::create_gnutls_provider), deleter}, {}});
+    candidates.push_back({"openssl", {new crypto_provider_factory(crypto::create_openssl_provider), deleter}, {}});
 
     return value_type(zis, "crypto-provider", std::move(candidates), "gnutls",
-            "select crypto provider backend (valid values: gnutls)");
+            "select crypto provider backend (valid values: gnutls, openssl)");
 }
 
 static program_options::selection_value<network_stack_factory> create_network_stacks_option(reactor_options& zis) {

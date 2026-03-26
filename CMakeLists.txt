@@ -749,6 +749,7 @@ add_library (seastar
   src/core/condition-variable.cc
   src/core/crypto.cc
   src/core/crypto_gnutls.cc
+  src/core/crypto_openssl.cc
   src/http/api_docs.cc
   src/http/common.cc
   src/http/file_handler.cc
