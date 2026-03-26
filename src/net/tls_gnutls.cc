@@ -461,27 +461,6 @@ private:
 }
 
 
-shared_ptr<tls::certificate_credentials> tls::credentials_builder::build_certificate_credentials() const {
-    auto creds = make_shared<certificate_credentials>();
-    apply_to(*creds);
-    return creds;
-}
-
-shared_ptr<tls::server_credentials> tls::credentials_builder::build_server_credentials() const {
-    auto i = _blobs.find(dh_level_key);
-    if (i == _blobs.end()) {
-#if GNUTLS_VERSION_NUMBER < 0x030600
-        throw std::invalid_argument("No DH level set");
-#else
-        auto creds = make_shared<server_credentials>();
-        apply_to(*creds);
-        return creds;
-#endif
-    }
-    auto creds = make_shared<server_credentials>(dh_params(std::any_cast<dh_params::level>(i->second)));
-    apply_to(*creds);
-    return creds;
-}
 
 using namespace std::chrono_literals;
 
