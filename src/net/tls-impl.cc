@@ -24,6 +24,8 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
 
+#include <seastar/util/variant_utils.hh>
+
 #include "../core/crypto.hh"
 #include "tls-impl.hh"
 
@@ -309,6 +311,66 @@ void tls::credentials_builder::set_session_resume_mode(session_resume_mode m) {
 
 void tls::credentials_builder::set_priority_string(const sstring& prio) {
     _priority = prio;
+}
+
+void tls::credentials_builder::apply_to(certificate_credentials& creds) const {
+    visit_blobs(_blobs, make_visitor(
+        [&](const std::string_view& key, const x509_simple& info) {
+            if (key == x509_trust_key) {
+                creds.set_x509_trust(info.data, info.format);
+            } else if (key == x509_crl_key) {
+                creds.set_x509_crl(info.data, info.format);
+            }
+        },
+        [&](const std::string_view&, const x509_key& info) {
+            creds.set_x509_key(info.cert, info.key, info.format);
+        },
+        [&](const std::string_view&, const pkcs12_simple& info) {
+            creds.set_simple_pkcs12(info.data, info.format, info.password);
+        }
+    ));
+
+    // TODO / Caveat:
+    // We cannot do this immediately, because we are not a continuation, and
+    // potentially blocking calls are a no-no.
+    // Doing this detached would be indeterministic, so set a flag in
+    // credentials, and do actual loading in first handshake (see session)
+    if (_blobs.count(system_trust)) {
+        creds._impl->_load_system_trust = true;
+    }
+
+    // GnuTLS-specific; no-op for OpenSSL backend.
+    if (!_priority.empty()) {
+        creds.set_priority_string(_priority);
+    }
+
+    // OpenSSL-specific; no-op for GnuTLS backend.
+    if (!_cipher_string.empty()) {
+        creds.set_cipher_string(_cipher_string);
+    }
+    if (!_ciphersuites.empty()) {
+        creds.set_ciphersuites(_ciphersuites);
+    }
+    if (_enable_server_precedence) {
+        creds.enable_server_precedence();
+    }
+    if (_min_tls_version.has_value()) {
+        creds.set_minimum_tls_version(*_min_tls_version);
+    }
+    if (_max_tls_version.has_value()) {
+        creds.set_maximum_tls_version(*_max_tls_version);
+    }
+    if (_enable_tls_renegotiation) {
+        creds.enable_tls_renegotiation();
+    }
+
+    creds._impl->set_client_auth(_client_auth);
+    // Note: this causes server session key rotation on cert reload
+    creds._impl->set_session_resume_mode(_session_resume_mode, std::span{_session_resume_key.begin(), _session_resume_key.end()});
+
+    if (!_alpn_protocols.empty()) {
+        creds._impl->set_alpn_protocols(_alpn_protocols);
+    }
 }
 
 std::string_view tls::format_as(subject_alt_name_type type) {

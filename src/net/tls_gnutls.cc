@@ -461,46 +461,6 @@ private:
 }
 
 
-void tls::credentials_builder::apply_to(certificate_credentials& creds) const {
-    // Could potentially be templated down, but why bother...
-    visit_blobs(_blobs, make_visitor(
-        [&](const std::string_view& key, const x509_simple& info) {
-            if (key == x509_trust_key) {
-                creds.set_x509_trust(info.data, info.format);
-            } else if (key == x509_crl_key) {
-                creds.set_x509_crl(info.data, info.format);
-            }
-        },
-        [&](const std::string_view&, const x509_key& info) {
-            creds.set_x509_key(info.cert, info.key, info.format);
-        },
-        [&](const std::string_view&, const pkcs12_simple& info) {
-            creds.set_simple_pkcs12(info.data, info.format, info.password);
-        }
-    ));
-
-    // TODO / Caveat:
-    // We cannot do this immediately, because we are not a continuation, and
-    // potentially blocking calls are a no-no.
-    // Doing this detached would be indeterministic, so set a flag in
-    // credentials, and do actual loading in first handshake (see session)
-    if (_blobs.count(system_trust)) {
-        creds._impl->_load_system_trust = true;
-    }
-
-    if (!_priority.empty()) {
-        creds.set_priority_string(_priority);
-    }
-
-    creds._impl->set_client_auth(_client_auth);
-    // Note: this causes server session key rotation on cert reload
-    creds._impl->set_session_resume_mode(_session_resume_mode, std::span{_session_resume_key.begin(), _session_resume_key.end()});
-
-    if (!_alpn_protocols.empty()) {
-        creds._impl->set_alpn_protocols(_alpn_protocols);
-    }
-}
-
 shared_ptr<tls::certificate_credentials> tls::credentials_builder::build_certificate_credentials() const {
     auto creds = make_shared<certificate_credentials>();
     apply_to(*creds);
