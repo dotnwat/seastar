@@ -49,18 +49,6 @@
 #include "loopback_socket.hh"
 #include "tmpdir.hh"
 
-#include <gnutls/gnutls.h>
-
-#if 0
-
-static void enable_gnutls_logging() {
-    gnutls_global_set_log_level(99);
-        gnutls_global_set_log_function([](int lv, const char * msg) {
-           std::cerr << "GNUTLS (" << lv << ") " << msg << std::endl;
-        });
-}
-#endif
-
 static const auto cert_location = boost::dll::program_location().parent_path();
 
 static std::string certfile(const std::string& file) {
@@ -71,6 +59,10 @@ using enable_if_with_networking = boost::unit_test::enable_if<SEASTAR_TESTING_WI
 using enable_if_without_networking = boost::unit_test::enable_if<!SEASTAR_TESTING_WITH_NETWORKING>;
 
 using namespace seastar;
+
+static bool using_gnutls() {
+    return std::string_view(tls::backend_name()) == "gnutls";
+}
 
 static future<> connect_to_ssl_addr(::shared_ptr<tls::certificate_credentials> certs, socket_address addr, const sstring& name = {}) {
     return repeat_until_value([=]() mutable {
@@ -171,6 +163,10 @@ SEASTAR_TEST_CASE(test_x509_client_with_builder_system_trust_multiple,
 
 SEASTAR_TEST_CASE(test_x509_client_with_system_trust_and_priority_strings,
                   *enable_if_with_networking()) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return make_ready_future<>();
+    }
     static std::vector<sstring> prios( {
         "NORMAL:+ARCFOUR-128", // means normal ciphers plus ARCFOUR-128.
         "SECURE128:-VERS-SSL3.0:+COMP-DEFLATE", // means that only secure ciphers are enabled, SSL3.0 is disabled, and libz compression enabled.
@@ -192,6 +188,10 @@ SEASTAR_TEST_CASE(test_x509_client_with_system_trust_and_priority_strings,
 
 SEASTAR_TEST_CASE(test_x509_client_with_system_trust_and_priority_strings_fail,
                   *enable_if_with_networking()) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return make_ready_future<>();
+    }
     static std::vector<sstring> prios( { "NONE",
         "NONE:+CURVE-SECP256R1"
     });
@@ -358,6 +358,10 @@ SEASTAR_THREAD_TEST_CASE(test_x509_client_with_builder_multiple) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_x509_client_with_priority_strings) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return;
+    }
     static std::vector<sstring> prios( {
         "NORMAL:+ARCFOUR-128", // means normal ciphers plus ARCFOUR-128.
         "SECURE128:-VERS-SSL3.0:+COMP-DEFLATE", // means that only secure ciphers are enabled, SSL3.0 is disabled, and libz compression enabled.
@@ -380,6 +384,10 @@ SEASTAR_THREAD_TEST_CASE(test_x509_client_with_priority_strings) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_x509_client_with_priority_strings_fail) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return;
+    }
     static std::vector<sstring> prios( { "NONE",
         "NONE:+CURVE-SECP256R1"
     });
@@ -1628,7 +1636,11 @@ static void do_test_tls13_session_tickets(bool reset_server) {
     b.set_x509_key_file(certfile("test.crt"), certfile("test.key"), tls::x509_crt_format::PEM).get();
     b.set_x509_trust_file(certfile("catest.pem"), tls::x509_crt_format::PEM).get();
     b.set_session_resume_mode(tls::session_resume_mode::TLS13_SESSION_TICKET);
-    b.set_priority_string("SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.3");
+    if (using_gnutls()) {
+        b.set_priority_string("SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.3");
+    } else {
+        b.set_minimum_tls_version(tls::tls_version::tlsv1_3);
+    }
 
     auto creds = b.build_certificate_credentials();
     auto serv = b.build_server_credentials();
@@ -1761,7 +1773,11 @@ SEASTAR_THREAD_TEST_CASE(test_tls13_session_tickets_invalidated_by_reload) {
     b.set_x509_key_file(cert, key, tls::x509_crt_format::PEM).get();
     b.set_x509_trust_file(certfile("catest.pem"), tls::x509_crt_format::PEM).get();
     b.set_session_resume_mode(tls::session_resume_mode::TLS13_SESSION_TICKET);
-    b.set_priority_string("SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.3");
+    if (using_gnutls()) {
+        b.set_priority_string("SECURE128:+SECURE192:-VERS-TLS-ALL:+VERS-TLS1.3");
+    } else {
+        b.set_minimum_tls_version(tls::tls_version::tlsv1_3);
+    }
 
     auto creds = b.build_certificate_credentials();
     auto serv = b.build_reloadable_server_credentials([&p](const std::unordered_set<sstring>&, std::exception_ptr) {
@@ -2016,7 +2032,11 @@ SEASTAR_THREAD_TEST_CASE(test_send_recv_alloc_limits) {
     b.set_x509_trust_file(certfile("catest.pem"), tls::x509_crt_format::PEM).get();
     b.set_client_auth(tls::client_auth::REQUIRE);
     b.set_session_resume_mode(tls::session_resume_mode::TLS13_SESSION_TICKET);
-    b.set_priority_string("SECURE128:+SECURE192:-VERS-TLS-ALL:-VERS-TLS1.2:+VERS-TLS1.3");
+    if (using_gnutls()) {
+        b.set_priority_string("SECURE128:+SECURE192:-VERS-TLS-ALL:-VERS-TLS1.2:+VERS-TLS1.3");
+    } else {
+        b.set_minimum_tls_version(tls::tls_version::tlsv1_3);
+    }
 
     auto creds = b.build_certificate_credentials();
     auto serv = b.build_server_credentials();

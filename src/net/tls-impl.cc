@@ -712,6 +712,10 @@ const std::error_category& tls::error_category() {
     return crypto::provider().get_tls_backend().error_category();
 }
 
+const char* tls::backend_name() {
+    return crypto::provider().get_tls_backend().name();
+}
+
 future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, sstring name) {
     tls_options options{.server_name = std::move(name)};
     return wrap_client(std::move(cred), std::move(s), std::move(options));
