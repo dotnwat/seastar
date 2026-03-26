@@ -419,6 +419,7 @@ seastar_find_dependencies ()
 
 # Private build dependencies not visible to consumers
 find_package (ragel 6.10 REQUIRED)
+find_package (OpenSSL REQUIRED)
 find_package (Threads REQUIRED)
 find_package (PthreadSetName REQUIRED)
 find_package (Valgrind REQUIRED)
@@ -784,6 +785,7 @@ add_library (seastar
   src/net/tcp.cc
   src/net/tls-impl.cc
   src/net/tls_gnutls.cc
+  src/net/tls_openssl.cc
   src/net/udp.cc
   src/net/unix_address.cc
   src/net/virtio.cc
@@ -891,6 +893,8 @@ target_link_libraries (seastar
   PRIVATE
     ${CMAKE_DL_LIBS}
     GnuTLS::gnutls
+    OpenSSL::SSL
+    OpenSSL::Crypto
     StdAtomic::atomic
     lksctp-tools::lksctp-tools
     protobuf::libprotobuf

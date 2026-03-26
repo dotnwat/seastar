@@ -121,6 +121,8 @@ namespace tls {
         tlsv1_3
     };
 
+    std::string_view format_as(tls_version);
+
     class abstract_credentials {
     protected:
         abstract_credentials() = default;
@@ -721,6 +723,13 @@ namespace tls {
     extern const int ERROR_MAC_VERIFY_FAILED;
 }
 }
+
+template <> struct fmt::formatter<seastar::tls::tls_version> : fmt::formatter<string_view> {
+    template <typename FormatContext>
+    auto format(seastar::tls::tls_version v, FormatContext& ctx) const {
+        return formatter<string_view>::format(format_as(v), ctx);
+    }
+};
 
 template <> struct fmt::formatter<seastar::tls::subject_alt_name_type> : fmt::formatter<string_view> {
     template <typename FormatContext>

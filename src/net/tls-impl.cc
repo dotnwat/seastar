@@ -323,6 +323,16 @@ std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name& a) {
     return os;
 }
 
+std::string_view tls::format_as(tls_version v) {
+    switch (v) {
+        case tls_version::tlsv1_0: return "TLSv1.0";
+        case tls_version::tlsv1_1: return "TLSv1.1";
+        case tls_version::tlsv1_2: return "TLSv1.2";
+        case tls_version::tlsv1_3: return "TLSv1.3";
+        default: return "UNKNOWN";
+    }
+}
+
 using namespace std::chrono_literals;
 
 class tls::reloadable_credentials_base {

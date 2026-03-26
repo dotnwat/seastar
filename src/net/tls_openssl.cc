@@ -70,6 +70,7 @@ module;
 module seastar;
 #else
 #include <seastar/core/gate.hh>
+#include <seastar/core/reactor.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/net/stack.hh>
@@ -78,7 +79,9 @@ module seastar;
 #include <seastar/util/later.hh>
 #include <seastar/util/log.hh>
 
-#include "net/tls-impl.hh"
+#include "tls-impl.hh"
+#include "tls_openssl.hh"
+#include "../core/crypto.hh"
 #endif
 
 template <> struct fmt::formatter<seastar::tls::session> : public fmt::formatter<string_view> {
@@ -86,6 +89,8 @@ template <> struct fmt::formatter<seastar::tls::session> : public fmt::formatter
 };
 
 namespace seastar {
+
+static logger tls_log("seastar-tls-openssl");
 
 enum class ossl_errc : int{};
 
@@ -139,13 +144,13 @@ public:
     }
 };
 
-const std::error_category& tls::error_category() {
+static const std::error_category& ossl_error_cat() {
     static const ossl_error_category ec;
     return ec;
 }
 
 std::error_code make_error_code(ossl_errc e) {
-    return std::error_code(static_cast<int>(e), tls::error_category());
+    return std::error_code(static_cast<int>(e), ossl_error_cat());
 }
 
 std::vector<ossl_errc> get_all_ossl_errors() {
@@ -161,7 +166,7 @@ std::system_error make_ossl_error(const std::string & msg, std::vector<ossl_errc
     if (error_codes.empty()) {
         return std::system_error{
             static_cast<int>(ERR_PACK(ERR_LIB_USER, 0, ERR_R_OPERATION_FAIL)),
-            tls::error_category(),
+            ossl_error_cat(),
             msg};
     }
     auto err_code = static_cast<unsigned long>(error_codes.front());
@@ -175,7 +180,7 @@ std::system_error make_ossl_error(const std::string & msg, std::vector<ossl_errc
     }
     return std::system_error(
         static_cast<int>(err_code),
-        tls::error_category(),
+        ossl_error_cat(),
         fmt::format("{}: {}", msg, error_codes));
 }
 
@@ -195,26 +200,6 @@ sstring asn1_str_to_str(T* asn1) {
     const auto len = ASN1_STRING_length(asn1);
     return sstring(reinterpret_cast<const char*>(ASN1_STRING_get0_data(asn1)), len);
 };
-
-static std::vector<std::byte> extract_x509_serial(X509* cert) {
-    constexpr size_t serial_max = 160;
-    const ASN1_INTEGER *serial_no = X509_get_serialNumber(cert);
-    const size_t serial_size = std::min(serial_max, (size_t)serial_no->length);
-    std::vector<std::byte> serial(
-        reinterpret_cast<std::byte*>(serial_no->data),
-        reinterpret_cast<std::byte*>(serial_no->data + serial_size));
-    return serial;
-}
-
-static time_t extract_x509_expiry(X509* cert) {
-    const ASN1_TIME *not_after = X509_get0_notAfter(cert);
-    if (not_after != nullptr) {
-        tm tm_struct{};
-        ASN1_TIME_to_tm(not_after, &tm_struct);
-        return mktime(&tm_struct);
-    }
-    return -1;
-}
 
 static tls::certificate_data get_der_certificate_data(X509* cert) {
     tls::certificate_data result;
@@ -356,33 +341,9 @@ private:
 
 BIO_METHOD* get_method();
 
-void tls::credentials_builder::set_cipher_string(const sstring& cipher_string) {
-    _cipher_string = cipher_string;
-}
-
-void tls::credentials_builder::set_ciphersuites(const sstring& ciphersuites) {
-    _ciphersuites = ciphersuites;
-}
-
-void tls::credentials_builder::enable_server_precedence() {
-    _enable_server_precedence = true;
-}
-
-void tls::credentials_builder::enable_tls_renegotiation() {
-    _enable_tls_renegotiation = true;
-}
-
-void tls::credentials_builder::set_minimum_tls_version(tls_version version) {
-    _min_tls_version.emplace(version);
-}
-
-void tls::credentials_builder::set_maximum_tls_version(tls_version version) {
-    _max_tls_version.emplace(version);
-}
-
 /// TODO: Implement the DH params impl struct
 ///
-class tls::dh_params::impl {
+class tls::dh_params::impl : public tls::dh_params_impl {
 public:
     explicit impl(level) {}
     impl(const blob&, x509_crt_format){}
@@ -395,20 +356,7 @@ private:
     evp_pkey_ptr _pkey;
 };
 
-tls::dh_params::dh_params(level lvl) : _impl(std::make_unique<impl>(lvl))
-{}
-
-tls::dh_params::dh_params(const blob& b, x509_crt_format fmt)
-        : _impl(std::make_unique<impl>(b, fmt)) {
-}
-
-// TODO(rob) some small amount of code duplication here
-tls::dh_params::~dh_params() = default;
-
-tls::dh_params::dh_params(dh_params&&) noexcept = default;
-tls::dh_params& tls::dh_params::operator=(dh_params&&) noexcept = default;
-
-class tls::certificate_credentials::impl {
+class tls::certificate_credentials::impl : public tls::credentials_impl {
     struct certkey_pair {
         x509_ptr cert;
         evp_pkey_ptr key;
@@ -487,7 +435,7 @@ public:
         return cert;
     }
 
-    void set_x509_trust(const blob& b, x509_crt_format fmt) {
+    void set_x509_trust(const blob& b, x509_crt_format fmt) override {
         bio_ptr cert_bio(BIO_new_mem_buf(b.data(), b.size()));
         x509_ptr cert;
         switch(fmt) {
@@ -509,7 +457,7 @@ public:
         }
     }
 
-    void set_x509_crl(const blob& b, x509_crt_format fmt) {
+    void set_x509_crl(const blob& b, x509_crt_format fmt) override {
         bio_ptr cert_bio(BIO_new_mem_buf(b.data(), b.size()));
         x509_crl_ptr crl;
         switch(fmt) {
@@ -533,7 +481,7 @@ public:
         enable_crl_checking();
     }
 
-    void set_x509_key(const blob& cert, const blob& key, x509_crt_format fmt) {
+    void set_x509_key(const blob& cert, const blob& key, x509_crt_format fmt) override {
         x509_ptr x509_cert{nullptr};
         bio_ptr key_bio(BIO_new_mem_buf(key.data(), key.size()));
         evp_pkey_ptr pkey;
@@ -576,7 +524,7 @@ public:
         _cert_and_key = certkey_pair{.cert = std::move(x509_cert), .key = std::move(pkey)};
     }
 
-    void set_simple_pkcs12(const blob& b, x509_crt_format, const sstring& password) {
+    void set_simple_pkcs12(const blob& b, x509_crt_format, const sstring& password) override {
         // Load the PKCS12 file
         bio_ptr bio(BIO_new_mem_buf(b.data(), b.size()));
         if (auto p12 = pkcs12(d2i_PKCS12_bio(bio.get(), nullptr))) {
@@ -629,43 +577,15 @@ public:
         }
     }
 
-    void dh_params(const tls::dh_params&) {}
+    void dh_params(const tls::dh_params&) override {}
 
-    std::vector<cert_info> get_x509_info() const {
-        if (_cert_and_key.cert) {
-            return {
-                cert_info{
-                    .serial = extract_x509_serial(_cert_and_key.cert.get()),
-                    .expiry = extract_x509_expiry(_cert_and_key.cert.get())}
-            };
-        }
-        return {};
-    }
-
-    std::vector<cert_info> get_x509_trust_list_info() const {
-        std::vector<cert_info> cert_infos;
-        STACK_OF(X509_OBJECT) *chain = X509_STORE_get0_objects(_creds.get());
-        auto num_elements = sk_X509_OBJECT_num(chain);
-        for (auto i=0; i < num_elements; i++) {
-            auto object = sk_X509_OBJECT_value(chain, i);
-            auto type = X509_OBJECT_get_type(object);
-            if (type == X509_LU_X509) {
-                auto cert = X509_OBJECT_get0_X509(object);
-                cert_infos.push_back(cert_info{
-                        .serial = extract_x509_serial(cert),
-                        .expiry = extract_x509_expiry(cert)});
-            }
-        }
-        return cert_infos;
-    }
-
-    void set_client_auth(client_auth ca) {
+    void set_client_auth(client_auth ca) override {
         _client_auth = ca;
     }
     client_auth get_client_auth() const {
         return _client_auth;
     }
-    void set_session_resume_mode(session_resume_mode m, std::span<const uint8_t> key = {}) {
+    void set_session_resume_mode(session_resume_mode m, std::span<const uint8_t> key = {}) override {
         _session_resume_mode = m;
         if (m != session_resume_mode::NONE) {
             _session_ticket_keys = {};
@@ -686,35 +606,35 @@ public:
         return _session_ticket_keys;
     }
 
-    void set_dn_verification_callback(dn_callback cb) {
+    void set_dn_verification_callback(dn_callback cb) override {
         _dn_callback = std::move(cb);
     }
 
-    void set_enable_certificate_verification(bool enable) {
+    void set_enable_certificate_verification(bool enable) override {
         _enable_certificate_verification = enable;
     }
 
-    void set_cipher_string(const sstring& cipher_string) {
+    void set_cipher_string(const sstring& cipher_string) override {
         _cipher_string = cipher_string;
     }
 
-    void set_ciphersuites(const sstring& ciphersuites) {
+    void set_ciphersuites(const sstring& ciphersuites) override {
         _ciphersuites = ciphersuites;
     }
 
-    void enable_server_precedence() {
+    void enable_server_precedence() override {
         _enable_server_precedence = true;
     }
 
-    void enable_tls_renegotiation() {
+    void enable_tls_renegotiation() override {
         _enable_tls_renegotiation = true;
     }
 
-    void set_minimum_tls_version(tls_version version) {
+    void set_minimum_tls_version(tls_version version) override {
         _min_tls_version.emplace(version);
     }
 
-    void set_maximum_tls_version(tls_version version) {
+    void set_maximum_tls_version(tls_version version) override {
         _max_tls_version.emplace(version);
     }
 
@@ -759,8 +679,19 @@ public:
         return _cert_and_key;
     }
 
-    void set_alpn_protocols(const std::vector<sstring>& protocols) {
+    void set_alpn_protocols(const std::vector<sstring>& protocols) override {
         _alpn_protocols = protocols;
+    }
+
+    future<> set_system_trust() override {
+        _load_system_trust = true;
+        return make_ready_future<>();
+    }
+
+    void set_priority_string(const sstring&) override {} // GnuTLS-specific, no-op for OpenSSL
+
+    static shared_ptr<impl> create() {
+        return make_shared<impl>();
     }
 
 private:
@@ -788,7 +719,6 @@ private:
 
     client_auth _client_auth = client_auth::NONE;
     session_resume_mode _session_resume_mode = session_resume_mode::NONE;
-    bool _load_system_trust = false;
     bool _enable_server_precedence = false;
     bool _enable_tls_renegotiation = false;
     bool _crl_check_flag_set = false;
@@ -796,152 +726,7 @@ private:
     std::vector<sstring> _alpn_protocols;
 };
 
-tls::certificate_credentials::certificate_credentials()
-        : _impl(make_shared<impl>()) {
-}
-
-tls::certificate_credentials::~certificate_credentials() {
-}
-
-tls::certificate_credentials::certificate_credentials(
-        certificate_credentials&&) noexcept = default;
-tls::certificate_credentials& tls::certificate_credentials::operator=(
-        certificate_credentials&&) noexcept = default;
-
-void tls::certificate_credentials::set_x509_trust(const blob& b,
-        x509_crt_format fmt) {
-    _impl->set_x509_trust(b, fmt);
-}
-
-void tls::certificate_credentials::set_x509_crl(const blob& b,
-        x509_crt_format fmt) {
-    _impl->set_x509_crl(b, fmt);
-
-}
-void tls::certificate_credentials::set_x509_key(const blob& cert,
-        const blob& key, x509_crt_format fmt) {
-    _impl->set_x509_key(cert, key, fmt);
-}
-
-void tls::certificate_credentials::set_simple_pkcs12(const blob& b,
-        x509_crt_format fmt, const sstring& password) {
-    _impl->set_simple_pkcs12(b, fmt, password);
-}
-
-future<> tls::certificate_credentials::set_system_trust() {
-    _impl->_load_system_trust = true;
-    return make_ready_future<>();
-}
-
-void tls::certificate_credentials::set_cipher_string(const sstring& cipher_string) {
-    _impl->set_cipher_string(cipher_string);
-}
-
-void tls::certificate_credentials::set_ciphersuites(const sstring& ciphersuites) {
-    _impl->set_ciphersuites(ciphersuites);
-}
-
-void tls::certificate_credentials::enable_server_precedence() {
-    _impl->enable_server_precedence();
-}
-
-void tls::certificate_credentials::enable_tls_renegotiation() {
-    _impl->enable_tls_renegotiation();
-}
-
-void tls::certificate_credentials::set_minimum_tls_version(tls_version version) {
-    _impl->set_minimum_tls_version(version);
-}
-
-void tls::certificate_credentials::set_maximum_tls_version(tls_version version) {
-    _impl->set_maximum_tls_version(version);
-}
-
-void tls::certificate_credentials::set_dn_verification_callback(dn_callback cb) {
-    _impl->set_dn_verification_callback(std::move(cb));
-}
-
-void tls::certificate_credentials::set_enable_certificate_verification(bool enable) {
-    _impl->set_enable_certificate_verification(enable);
-}
-
-std::optional<std::vector<cert_info>> tls::certificate_credentials::get_cert_info() const noexcept {
-    if (_impl == nullptr) {
-        return std::nullopt;
-    }
-
-    try {
-        auto result = _impl->get_x509_info();
-        return result;
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-std::optional<std::vector<cert_info>> tls::certificate_credentials::get_trust_list_info() const noexcept {
-    if (_impl == nullptr) {
-        return std::nullopt;
-    }
-
-    try {
-        auto result = _impl->get_x509_trust_list_info();
-        return result;
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-void tls::certificate_credentials::enable_load_system_trust() {
-    _impl->_load_system_trust = true;
-}
-
-void tls::certificate_credentials::set_client_auth(client_auth ca) {
-    _impl->set_client_auth(ca);
-}
-
-void tls::certificate_credentials::set_session_resume_mode(session_resume_mode m, std::span<const uint8_t> key) {
-    _impl->set_session_resume_mode(m, key);
-}
-
-void tls::certificate_credentials::set_alpn_protocols(const std::vector<sstring>& protocols) {
-    _impl->set_alpn_protocols(protocols);
-}
-
-tls::server_credentials::server_credentials()
-    : server_credentials(dh_params{})
-{}
-
-tls::server_credentials::server_credentials(shared_ptr<dh_params> dh)
-    : server_credentials(*dh)
-{}
-
-tls::server_credentials::server_credentials(const dh_params& dh) {
-    _impl->dh_params(dh);
-}
-
-tls::server_credentials::server_credentials(server_credentials&&) noexcept = default;
-tls::server_credentials& tls::server_credentials::operator=(
-        server_credentials&&) noexcept = default;
-
-void tls::server_credentials::set_client_auth(client_auth ca) {
-    _impl->set_client_auth(ca);
-}
-
-void tls::server_credentials::set_session_resume_mode(session_resume_mode m) {
-    _impl->set_session_resume_mode(m);
-}
-
-void tls::server_credentials::set_alpn_protocols(const std::vector<sstring>& protocols) {
-    _impl->set_alpn_protocols(protocols);
-}
-
 namespace tls {
-
-std::vector<uint8_t> generate_session_ticket_key() {
-    session_ticket_keys keys;
-    keys.generate_keys();
-    return keys();
-}
 
 int session_ticket_cb(SSL * s, unsigned char key_name[16],
                       unsigned char iv[EVP_MAX_IV_LENGTH],
@@ -1001,7 +786,7 @@ public:
                 return "DISCONNECTED";
             }
         }())
-      , _creds(creds->_impl)
+      , _creds(static_pointer_cast<tls::certificate_credentials::impl>(creds->_impl))
       , _in(_sock->source())
       , _out(_sock->sink())
       , _in_sem(1)
@@ -1702,7 +1487,7 @@ SEASTAR_INTERNAL_END_IGNORE_DEPRECATIONS
         return *_sock;
     }
 
-    future<std::optional<session_dn>> get_distinguished_name(dn_format format) override {
+    future<std::optional<session_dn>> get_distinguished_name() override {
         using result_t = std::optional<session_dn>;
         if (_error) {
             return make_exception_future<result_t>(_error);
@@ -1713,9 +1498,9 @@ SEASTAR_INTERNAL_END_IGNORE_DEPRECATIONS
         }
         if (!connected()) {
             return handshake().then(
-              [this, format]() mutable { return get_distinguished_name(format); });
+              [this]() mutable { return get_distinguished_name(); });
         }
-        result_t dn = extract_dn_information(is_verification_error::no, format);
+        result_t dn = extract_dn_information();
         return make_ready_future<result_t>(std::move(dn));
     }
 
@@ -1958,7 +1743,7 @@ private:
 
     using is_verification_error = bool_class<struct is_verification_error_tag>;
 
-    std::optional<session_dn> extract_dn_information(is_verification_error verification_error = is_verification_error::no, dn_format format = dn_format::legacy) const {
+    std::optional<session_dn> extract_dn_information(is_verification_error verification_error = is_verification_error::no) const {
         const auto peer_cert = [this, verification_error]{
             if (verification_error) {
                 // If we are attempting to get a DN from a cert that failed verification, then
@@ -1973,8 +1758,8 @@ private:
         if (!peer_cert) {
             return std::nullopt;
         }
-        auto subject = get_dn_string(X509_get_subject_name(peer_cert.get()), format);
-        auto issuer = get_dn_string(X509_get_issuer_name(peer_cert.get()), format);
+        auto subject = get_dn_string(X509_get_subject_name(peer_cert.get()));
+        auto issuer = get_dn_string(X509_get_issuer_name(peer_cert.get()));
         if (!subject || !issuer) {
             throw make_ossl_error(
               "error while extracting certificate DN strings");
@@ -2144,17 +1929,9 @@ private:
         return ssl_ctx;
     }
 
-    static std::optional<sstring> get_dn_string(X509_NAME* name, dn_format format = dn_format::legacy) {
+    static std::optional<sstring> get_dn_string(X509_NAME* name) {
         auto out = bio_ptr(BIO_new(BIO_s_mem()));
-        unsigned long flags = [](dn_format format) {
-            switch(format) {
-            case dn_format::rfc2253:
-                return XN_FLAG_RFC2253;
-            case dn_format::legacy:
-                return ASN1_STRFLGS_RFC2253 | XN_FLAG_SEP_COMMA_PLUS | XN_FLAG_FN_SN | XN_FLAG_DUMP_UNKNOWN_FIELDS;
-            }
-            __builtin_unreachable();
-        }(format);
+        unsigned long flags = ASN1_STRFLGS_RFC2253 | XN_FLAG_SEP_COMMA_PLUS | XN_FLAG_FN_SN | XN_FLAG_DUMP_UNKNOWN_FIELDS;
         if (-1 == X509_NAME_print_ex(out.get(), name, 0, flags)) {
             return std::nullopt;
         }
@@ -2336,10 +2113,9 @@ int bio_write_ex(BIO* b, const char * data, size_t dlen, size_t * written) {
         size_t n;
 
         if (!session->_output_pending.failed()) {
-            scattered_message<char> msg;
-            msg.append(std::string_view(data, dlen));
-            n = msg.size();
-            session->_output_pending = session->_out.put(std::move(msg).release());
+            auto buf = temporary_buffer<char>(data, dlen);
+            n = buf.size();
+            session->_output_pending = session->_out.put(std::move(buf));
             tls_log.trace("{} bio_write_ex: Appended {} bytes to output pending", *session, n);
         }
 
@@ -2439,21 +2215,35 @@ BIO_METHOD* get_method() {
     return method_ptr.get();
 }
 
-future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, sstring name) {
-    tls_options options{.server_name = std::move(name)};
-    return wrap_client(std::move(cred), std::move(s), std::move(options));
+shared_ptr<tls::session_impl> tls::openssl::make_session(
+        tls::session_type type,
+        shared_ptr<tls::certificate_credentials> creds,
+        std::unique_ptr<net::connected_socket_impl> sock,
+        const tls::tls_options& options) {
+    return seastar::make_shared<tls::session>(type, std::move(creds), std::move(sock), options);
 }
 
-future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, tls_options options) {
-    session_ref sess(seastar::make_shared<session>(session_type::CLIENT, std::move(cred), std::move(s),  options));
-    connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
-    return make_ready_future<connected_socket>(std::move(sock));
+const std::error_category& tls::openssl::error_category() {
+    static const ossl_error_category ec;
+    return ec;
 }
 
-future<connected_socket> tls::wrap_server(shared_ptr<server_credentials> cred, connected_socket&& s) {
-    session_ref sess(seastar::make_shared<session>(session_type::SERVER, std::move(cred), std::move(s)));
-    connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
-    return make_ready_future<connected_socket>(std::move(sock));
+std::vector<uint8_t> tls::openssl::generate_session_ticket_key() {
+    session_ticket_keys keys;
+    keys.generate_keys();
+    return keys();
+}
+
+shared_ptr<tls::credentials_impl> tls::openssl::make_credentials_impl() {
+    return tls::certificate_credentials::impl::create();
+}
+
+std::unique_ptr<tls::dh_params_impl> tls::openssl::make_dh_params(tls::dh_params::level lvl) {
+    return std::make_unique<tls::dh_params::impl>(lvl);
+}
+
+std::unique_ptr<tls::dh_params_impl> tls::openssl::make_dh_params(const tls::blob& b, tls::x509_crt_format fmt) {
+    return std::make_unique<tls::dh_params::impl>(b, fmt);
 }
 
 } // namespace seastar
@@ -2465,57 +2255,13 @@ auto fmt::formatter<seastar::tls::session>::format(
         s.get_type_string(), s.local_address(), s.remote_address());
 }
 
-const int seastar::tls::ERROR_UNKNOWN_COMPRESSION_ALGORITHM = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNSUPPORTED_COMPRESSION_ALGORITHM);
-const int seastar::tls::ERROR_UNKNOWN_CIPHER_TYPE = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNKNOWN_CIPHER_TYPE);
-const int seastar::tls::ERROR_INVALID_SESSION = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_INVALID_SESSION_ID);
-const int seastar::tls::ERROR_UNEXPECTED_HANDSHAKE_PACKET = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNEXPECTED_RECORD);
-const int seastar::tls::ERROR_UNKNOWN_CIPHER_SUITE = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNSUPPORTED_PROTOCOL);
-const int seastar::tls::ERROR_UNKNOWN_ALGORITHM = ERR_PACK(
-  ERR_LIB_RSA, 0, RSA_R_UNKNOWN_ALGORITHM_TYPE);
-const int seastar::tls::ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_NO_SUITABLE_SIGNATURE_ALGORITHM);
-const int seastar::tls::ERROR_SAFE_RENEGOTIATION_FAILED = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_RENEGOTIATION_MISMATCH);
-const int seastar::tls::ERROR_UNSAFE_RENEGOTIATION_DENIED = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNSAFE_LEGACY_RENEGOTIATION_DISABLED);
-const int seastar::tls::ERROR_UNKNOWN_SRP_USERNAME = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_INVALID_SRP_USERNAME);
-const int seastar::tls::ERROR_PREMATURE_TERMINATION = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNEXPECTED_EOF_WHILE_READING);
-// System errors are not ERR_PACK'ed like other errors but instead
-// are OR'ed with ((unsigned int)INT_MAX + 1)
-const int seastar::tls::ERROR_PUSH = int(ERR_SYSTEM_FLAG | EPIPE);
-const int seastar::tls::ERROR_PULL = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_READ_BIO_NOT_SET);
-const int seastar::tls::ERROR_UNEXPECTED_PACKET = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNEXPECTED_MESSAGE);
-const int seastar::tls::ERROR_UNSUPPORTED_VERSION = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_UNSUPPORTED_SSL_VERSION);
-const int seastar::tls::ERROR_NO_CIPHER_SUITES = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_NO_CIPHERS_AVAILABLE);
-const int seastar::tls::ERROR_DECRYPTION_FAILED = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_DECRYPTION_FAILED);
-const int seastar::tls::ERROR_MAC_VERIFY_FAILED = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_DECRYPTION_FAILED_OR_BAD_RECORD_MAC);
-const int seastar::tls::ERROR_WRONG_VERSION_NUMBER = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_WRONG_VERSION_NUMBER);
-const int seastar::tls::ERROR_HTTP_REQUEST = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_HTTP_REQUEST);
-const int seastar::tls::ERROR_HTTPS_PROXY_REQUEST = ERR_PACK(
-  ERR_LIB_SSL, 0, SSL_R_HTTPS_PROXY_REQUEST);
-
 std::optional<seastar::sstring> fmt::formatter<seastar::ossl_errc>::alternate_message(seastar::ossl_errc error) {
     switch(static_cast<int>(error)) {
-    case seastar::tls::ERROR_WRONG_VERSION_NUMBER:
+    case ERR_PACK(ERR_LIB_SSL, 0, SSL_R_WRONG_VERSION_NUMBER):
         return "Wrong SSL Version number: ensure client is configured to use TLS";
-    case seastar::tls::ERROR_HTTP_REQUEST:
+    case ERR_PACK(ERR_LIB_SSL, 0, SSL_R_HTTP_REQUEST):
         return "Received HTTP request on HTTPS server";
-    case seastar::tls::ERROR_HTTPS_PROXY_REQUEST:
+    case ERR_PACK(ERR_LIB_SSL, 0, SSL_R_HTTPS_PROXY_REQUEST):
         return "Received HTTPS proxy request";
     }
 
