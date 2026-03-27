@@ -72,6 +72,7 @@ namespace tls {
     class dh_params_impl;
     // allow backend friends
     class gnutls_provider_certificate_credentials_impl;
+    class openssl_session;
 
     /**
      * Diffie-Hellman parameters for
@@ -278,6 +279,7 @@ namespace tls {
 
     private:
         friend class session;
+        friend class openssl_session;
         friend class server_session;
         friend class server_credentials;
         friend class credentials_builder;

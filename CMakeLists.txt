@@ -810,6 +810,7 @@ add_library (seastar
 if (Seastar_OPENSSL)
   target_sources(seastar
     PRIVATE
+      src/net/tls_openssl.cc
       src/core/crypto_openssl.cc
   )
 endif ()
