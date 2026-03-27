@@ -49,7 +49,6 @@
 #include "loopback_socket.hh"
 #include "tmpdir.hh"
 
-
 #if 0
 #include <gnutls/gnutls.h>
 
@@ -71,6 +70,10 @@ using enable_if_with_networking = boost::unit_test::enable_if<SEASTAR_TESTING_WI
 using enable_if_without_networking = boost::unit_test::enable_if<!SEASTAR_TESTING_WITH_NETWORKING>;
 
 using namespace seastar;
+
+static bool using_gnutls() {
+    return std::string_view(tls::backend_name()) == "gnutls";
+}
 
 static future<> connect_to_ssl_addr(::shared_ptr<tls::certificate_credentials> certs, socket_address addr, const sstring& name = {}) {
     return repeat_until_value([=]() mutable {
@@ -171,6 +174,10 @@ SEASTAR_TEST_CASE(test_x509_client_with_builder_system_trust_multiple,
 
 SEASTAR_TEST_CASE(test_x509_client_with_system_trust_and_priority_strings,
                   *enable_if_with_networking()) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return make_ready_future<>();
+    }
     static std::vector<sstring> prios( {
         "NORMAL:+ARCFOUR-128", // means normal ciphers plus ARCFOUR-128.
         "SECURE128:-VERS-SSL3.0:+COMP-DEFLATE", // means that only secure ciphers are enabled, SSL3.0 is disabled, and libz compression enabled.
@@ -192,6 +199,10 @@ SEASTAR_TEST_CASE(test_x509_client_with_system_trust_and_priority_strings,
 
 SEASTAR_TEST_CASE(test_x509_client_with_system_trust_and_priority_strings_fail,
                   *enable_if_with_networking()) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return make_ready_future<>();
+    }
     static std::vector<sstring> prios( { "NONE",
         "NONE:+CURVE-SECP256R1"
     });
@@ -358,6 +369,10 @@ SEASTAR_THREAD_TEST_CASE(test_x509_client_with_builder_multiple) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_x509_client_with_priority_strings) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return;
+    }
     static std::vector<sstring> prios( {
         "NORMAL:+ARCFOUR-128", // means normal ciphers plus ARCFOUR-128.
         "SECURE128:-VERS-SSL3.0:+COMP-DEFLATE", // means that only secure ciphers are enabled, SSL3.0 is disabled, and libz compression enabled.
@@ -380,6 +395,10 @@ SEASTAR_THREAD_TEST_CASE(test_x509_client_with_priority_strings) {
 }
 
 SEASTAR_THREAD_TEST_CASE(test_x509_client_with_priority_strings_fail) {
+    if (!using_gnutls()) {
+        // GnuTLS priority strings are not applicable to OpenSSL
+        return;
+    }
     static std::vector<sstring> prios( { "NONE",
         "NONE:+CURVE-SECP256R1"
     });
