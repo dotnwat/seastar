@@ -313,6 +313,24 @@ void tls::credentials_builder::set_priority_string(const sstring& prio) {
     _priority = prio;
 }
 
+shared_ptr<tls::certificate_credentials> tls::credentials_builder::build_certificate_credentials() const {
+    auto creds = make_shared<certificate_credentials>();
+    apply_to(*creds);
+    return creds;
+}
+
+shared_ptr<tls::server_credentials> tls::credentials_builder::build_server_credentials() const {
+    auto i = _blobs.find(dh_level_key);
+    if (i == _blobs.end()) {
+        auto creds = make_shared<server_credentials>();
+        apply_to(*creds);
+        return creds;
+    }
+    auto creds = make_shared<server_credentials>(dh_params(std::any_cast<dh_params::level>(i->second)));
+    apply_to(*creds);
+    return creds;
+}
+
 void tls::credentials_builder::apply_to(certificate_credentials& creds) const {
     visit_blobs(_blobs, make_visitor(
         [&](const std::string_view& key, const x509_simple& info) {
