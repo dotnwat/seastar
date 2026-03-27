@@ -24,6 +24,7 @@
 #include <seastar/core/file.hh>
 #include <seastar/core/reactor.hh>
 
+#include "../core/crypto.hh"
 #include "tls-impl.hh"
 
 namespace seastar {
@@ -192,6 +193,26 @@ std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name::value_ty
 std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name& a) {
     fmt::print(os, "{}", a);
     return os;
+}
+
+future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, sstring name) {
+    tls_options options{.server_name = std::move(name)};
+    return wrap_client(std::move(cred), std::move(s), std::move(options));
+}
+
+future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, tls_options options) {
+    session_ref sess(crypto::provider().get_tls_backend().make_session(
+        session_type::CLIENT, std::move(cred), net::get_impl::get(std::move(s)), options));
+    connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
+    return make_ready_future<connected_socket>(std::move(sock));
+}
+
+future<connected_socket> tls::wrap_server(shared_ptr<server_credentials> cred, connected_socket&& s) {
+    tls_options options;
+    session_ref sess(crypto::provider().get_tls_backend().make_session(
+        session_type::SERVER, std::move(cred), net::get_impl::get(std::move(s)), options));
+    connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
+    return make_ready_future<connected_socket>(std::move(sock));
 }
 
 future<connected_socket> tls::connect(shared_ptr<certificate_credentials> cred, socket_address sa, sstring name) {

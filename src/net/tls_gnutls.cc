@@ -1814,23 +1814,6 @@ private:
 }
 
 
-future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, sstring name) {
-    tls_options options{.server_name = std::move(name)};
-    return wrap_client(std::move(cred), std::move(s), std::move(options));
-}
-
-future<connected_socket> tls::wrap_client(shared_ptr<certificate_credentials> cred, connected_socket&& s, tls_options options) {
-    tls::session_ref sess(make_shared<session>(session::type::CLIENT, std::move(cred), std::move(s),  options));
-    connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
-    return make_ready_future<connected_socket>(std::move(sock));
-}
-
-future<connected_socket> tls::wrap_server(shared_ptr<server_credentials> cred, connected_socket&& s) {
-    tls::session_ref sess(make_shared<session>(session::type::SERVER, std::move(cred), std::move(s)));
-    connected_socket sock(std::make_unique<tls_connected_socket_impl>(std::move(sess)));
-    return make_ready_future<connected_socket>(std::move(sock));
-}
-
 
 
 shared_ptr<tls::session_impl> tls::gnutls::make_session(
