@@ -57,6 +57,7 @@
 #include <seastar/core/with_timeout.hh>
 #include <seastar/net/tls.hh>
 #include <seastar/net/stack.hh>
+#include "../core/crypto.hh"
 #include "tls-impl.hh"
 #include "tls_gnutls.hh"
 #include <seastar/util/std-compat.hh>
@@ -154,7 +155,11 @@ static auto get_gtls_string = [](auto func, auto... args) noexcept {
 
 }
 
-class tls::dh_params::impl : gnutlsobj {
+namespace tls {
+
+class gnutls_provider_dh_params_impl : gnutlsobj, public dh_params_impl {
+    using level = dh_params::level;
+
     static gnutls_sec_param_t to_gnutls_level(level l) {
         switch (l) {
             case level::LEGACY: return GNUTLS_SEC_PARAM_LEGACY;
@@ -177,15 +182,15 @@ class tls::dh_params::impl : gnutlsobj {
         return dh_ptr(params, &gnutls_dh_params_deinit);
     }
 public:
-    impl(dh_ptr p)
+    gnutls_provider_dh_params_impl(dh_ptr p)
         : _params(std::move(p))
     {}
-    impl(level lvl)
+    gnutls_provider_dh_params_impl(level lvl)
 #if GNUTLS_VERSION_NUMBER >= 0x030506
         : _params(nullptr, &gnutls_dh_params_deinit)
         , _sec_param(to_gnutls_level(lvl))
 #else
-        : impl([&] {
+        : gnutls_provider_dh_params_impl([&] {
             auto bits = gnutls_sec_param_to_pk_bits(GNUTLS_PK_DH, to_gnutls_level(lvl));
             auto ptr = new_dh_params();
             gtls_chk(gnutls_dh_params_generate2(ptr.get(), bits));
@@ -193,22 +198,22 @@ public:
         }())
 #endif
     {}
-    impl(const blob& pkcs3, x509_crt_format fmt)
-        : impl([&] {
+    gnutls_provider_dh_params_impl(const blob& pkcs3, x509_crt_format fmt)
+        : gnutls_provider_dh_params_impl([&] {
             auto ptr = new_dh_params();
             blob_wrapper w(pkcs3);
             gtls_chk(gnutls_dh_params_import_pkcs3(ptr.get(), &w, gnutls_x509_crt_fmt_t(fmt)));
             return ptr;
         }())
     {}
-    impl(const impl& v)
-        : impl([&v] {
+    gnutls_provider_dh_params_impl(const gnutls_provider_dh_params_impl& v)
+        : gnutls_provider_dh_params_impl([&v] {
             auto ptr = new_dh_params();
             gtls_chk(gnutls_dh_params_cpy(ptr.get(), v));
             return ptr;
         }())
     {}
-    ~impl() = default;
+    ~gnutls_provider_dh_params_impl() = default;
 
     operator gnutls_dh_params_t() const {
         return _params.get();
@@ -225,11 +230,14 @@ private:
 #endif
 };
 
-tls::dh_params::dh_params(level lvl) : _impl(std::make_unique<impl>(lvl))
-{}
+}
+
+tls::dh_params::dh_params(level lvl)
+    : _impl(tls::gnutls::make_dh_params(lvl)) {
+}
 
 tls::dh_params::dh_params(const blob& b, x509_crt_format fmt)
-        : _impl(std::make_unique<impl>(b, fmt)) {
+    : _impl(tls::gnutls::make_dh_params(b, fmt)) {
 }
 
 tls::dh_params::~dh_params() {
@@ -317,9 +325,11 @@ struct gnutls_datum : public gnutls_datum_t {
     }
 };
 
-class tls::certificate_credentials::impl: public gnutlsobj, public tls::credentials_impl {
+namespace tls {
+
+class gnutls_provider_certificate_credentials_impl: public gnutlsobj, public credentials_impl {
 public:
-    impl()
+    gnutls_provider_certificate_credentials_impl()
             : _creds([] {
                 gnutls_certificate_credentials_t xcred;
                 gnutls_certificate_allocate_credentials(&xcred);
@@ -329,7 +339,7 @@ public:
                 return xcred;
             }()), _priority(nullptr, &gnutls_priority_deinit)
     {}
-    ~impl() {
+    ~gnutls_provider_certificate_credentials_impl() {
         if (_creds != nullptr) {
             gnutls_certificate_free_credentials (_creds);
         }
@@ -366,14 +376,15 @@ public:
                         gnutls_x509_crt_fmt_t(fmt), password.c_str()));
     }
     void dh_params(const tls::dh_params& dh) override {
+        auto& gnutls_impl = static_cast<gnutls_provider_dh_params_impl&>(*dh._impl);
 #if GNUTLS_VERSION_NUMBER >= 0x030506
-        auto sec_param = dh._impl->sec_param();
+        auto sec_param = gnutls_impl.sec_param();
         if (sec_param) {
             gnutls_certificate_set_known_dh_params(*this, *sec_param);
             return;
         }
 #endif
-        auto cpy = std::make_unique<tls::dh_params::impl>(*dh._impl);
+        auto cpy = std::make_unique<gnutls_provider_dh_params_impl>(gnutls_impl);
         gnutls_certificate_set_dh_params(*this, *cpy);
         _dh_params = std::move(cpy);
     }
@@ -451,7 +462,7 @@ private:
     }
 
     gnutls_certificate_credentials_t _creds;
-    std::unique_ptr<tls::dh_params::impl> _dh_params;
+    std::unique_ptr<gnutls_provider_dh_params_impl> _dh_params;
     std::unique_ptr<std::remove_pointer_t<gnutls_priority_t>, void(*)(gnutls_priority_t)> _priority;
     client_auth _client_auth = client_auth::NONE;
     session_resume_mode _session_resume_mode = session_resume_mode::NONE;
@@ -462,8 +473,10 @@ private:
     std::vector<sstring> _alpn_protocols;
 };
 
+}
+
 tls::certificate_credentials::certificate_credentials()
-        : _impl(make_shared<impl>()) {
+        : _impl(tls::gnutls::make_credentials_impl()) {
 }
 
 tls::certificate_credentials::~certificate_credentials() {
@@ -928,7 +941,7 @@ public:
 
     session(type t, shared_ptr<tls::certificate_credentials> creds,
             std::unique_ptr<net::connected_socket_impl> sock, tls_options options = {})
-            : _type(t), _sock(std::move(sock)), _creds(creds->_impl),
+            : _type(t), _sock(std::move(sock)), _creds(static_pointer_cast<gnutls_provider_certificate_credentials_impl>(creds->_impl)),
                     _in(_sock->source()), _out(_sock->sink()),
                     _in_sem(1), _out_sem(1), _options(std::move(options)), _output_pending(
                     make_ready_future<>()), _session([t] {
@@ -1790,7 +1803,7 @@ private:
     type _type;
 
     std::unique_ptr<net::connected_socket_impl> _sock;
-    shared_ptr<tls::certificate_credentials::impl> _creds;
+    shared_ptr<gnutls_provider_certificate_credentials_impl> _creds;
     data_source _in;
     data_sink _out;
 
@@ -1836,6 +1849,18 @@ std::vector<uint8_t> tls::gnutls::generate_session_ticket_key() {
     auto result = std::vector<uint8_t>(key.data, key.data + key.size);
     gnutls_free(key.data);
     return result;
+}
+
+shared_ptr<tls::credentials_impl> tls::gnutls::make_credentials_impl() {
+    return make_shared<gnutls_provider_certificate_credentials_impl>();
+}
+
+std::unique_ptr<tls::dh_params_impl> tls::gnutls::make_dh_params(tls::dh_params::level lvl) {
+    return std::make_unique<gnutls_provider_dh_params_impl>(lvl);
+}
+
+std::unique_ptr<tls::dh_params_impl> tls::gnutls::make_dh_params(const tls::blob& b, tls::x509_crt_format fmt) {
+    return std::make_unique<gnutls_provider_dh_params_impl>(b, fmt);
 }
 
 } // namespace seastar
