@@ -115,7 +115,8 @@ public:
     }
 };
 
-const std::error_category& tls::error_category() {
+
+static const gnutls_error_category& local_error_category() {
     static const gnutls_error_category ec;
     return ec;
 }
@@ -124,7 +125,7 @@ const std::error_category& tls::error_category() {
 // < 0 -> error.
 static void gtls_chk(int res) {
     if (res < 0) {
-        throw std::system_error(res, tls::error_category());
+        throw std::system_error(res, local_error_category());
     }
 }
 
@@ -1127,7 +1128,7 @@ public:
         }
         // Note: only applicable to server.
         if (_type == type::CLIENT) {
-            throw std::system_error(GNUTLS_E_INVALID_REQUEST, error_category(), "re-handshake only applicable for server socket");
+            throw std::system_error(GNUTLS_E_INVALID_REQUEST, local_error_category(), "re-handshake only applicable for server socket");
         }
         return do_handshake_sync(&session::do_force_rehandshake);
     }
@@ -1200,7 +1201,7 @@ public:
             return;
         }
         if (res < 0) {
-            throw std::system_error(res, error_category());
+            throw std::system_error(res, local_error_category());
         }
         if (status & GNUTLS_CERT_INVALID) {
             auto stat_str = cert_status_to_string(gnutls_certificate_type_get(*this), status);
@@ -1290,7 +1291,7 @@ public:
                     _connected = false;
                     return make_ready_future<temporary_buffer<char>>();
                 default:
-                    _error = std::make_exception_ptr(std::system_error(n, error_category()));
+                    _error = std::make_exception_ptr(std::system_error(n, local_error_category()));
                     return make_exception_future<temporary_buffer<char>>(_error);
                 }
             }
@@ -1467,12 +1468,12 @@ public:
 
     future<>
     handle_error(int res) {
-        _error = std::make_exception_ptr(std::system_error(res, error_category()));
+        _error = std::make_exception_ptr(std::system_error(res, local_error_category()));
         return make_exception_future(_error);
     }
     future<>
     handle_output_error(int res) {
-        _error = std::make_exception_ptr(std::system_error(res, error_category()));
+        _error = std::make_exception_ptr(std::system_error(res, local_error_category()));
         // #453
         // defensively wait for output before generating the error.
         // if we have both error code and an exception in output
@@ -1483,7 +1484,7 @@ public:
                 // output was ok/done, just generate error code exception
                 return make_exception_future(_error);
             } catch (...) {
-                std::throw_with_nested(std::system_error(res, error_category()));
+                std::throw_with_nested(std::system_error(res, local_error_category()));
             }
         });
     }
@@ -1826,7 +1827,8 @@ shared_ptr<tls::session_impl> tls::gnutls::make_session(
 }
 
 const std::error_category& tls::gnutls::error_category() {
-    return tls::error_category();
+    static const gnutls_error_category ec;
+    return ec;
 }
 
 std::vector<uint8_t> tls::gnutls::generate_session_ticket_key() {
