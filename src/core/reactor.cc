@@ -165,6 +165,7 @@
 #include <seastar/util/spinlock.hh>
 #include <seastar/util/internal/iovec_utils.hh>
 #include <seastar/util/internal/magic.hh>
+#include "core/crypto.hh"
 #include "core/reactor_backend.hh"
 #include "core/syscall_result.hh"
 #include "core/thread_pool.hh"
@@ -1590,6 +1591,16 @@ void
 reactor::block_notifier(int) {
     engine()._cpu_stall_detector->on_signal();
 }
+
+class crypto_provider_factory {
+    using factory_func = noncopyable_function<std::unique_ptr<crypto::crypto_provider>()>;
+    factory_func _func;
+
+public:
+    crypto_provider_factory(factory_func func)
+        : _func(std::move(func)) { }
+    std::unique_ptr<crypto::crypto_provider> operator()() { return _func(); }
+};
 
 class network_stack_factory {
     network_stack_entry::factory_func _func;
@@ -3876,6 +3887,23 @@ static std::tuple<std::filesystem::path, uint64_t> wakeup_granularity() {
     return {"", 0};
 }
 
+static program_options::selection_value<crypto_provider_factory> create_crypto_provider_option(reactor_options& zis) {
+    using value_type = program_options::selection_value<crypto_provider_factory>;
+    value_type::candidates candidates;
+
+    auto deleter = [] (crypto_provider_factory* p) { delete p; };
+
+    candidates.push_back({"gnutls", {new crypto_provider_factory(crypto::create_gnutls_provider), deleter}, {}});
+
+#ifdef SEASTAR_HAVE_OPENSSL
+    candidates.push_back({"openssl", {new crypto_provider_factory(crypto::create_openssl_provider), deleter}, {}});
+#endif
+
+    auto candidate_names = candidates | std::views::transform([](const auto& c) { return c.name; });
+    return value_type(zis, "crypto-provider", std::move(candidates), candidates.at(0).name,
+            fmt::format("select crypto provider backend (valid values: {})", fmt::join(candidate_names, ",")));
+}
+
 static program_options::selection_value<network_stack_factory> create_network_stacks_option(reactor_options& zis) {
     using value_type = program_options::selection_value<network_stack_factory>;
     value_type::candidates candidates;
@@ -3912,6 +3940,7 @@ static program_options::selection_value<reactor_backend_selector>::candidates ba
 
 reactor_options::reactor_options(program_options::option_group* parent_group)
     : program_options::option_group(parent_group, "Core options")
+    , crypto_provider(create_crypto_provider_option(*this))
     , network_stack(create_network_stacks_option(*this))
     , poll_mode(*this, "poll-mode", "poll continuously (100% cpu use)")
     , idle_poll_time_us(*this, "idle-poll-time-us", reactor::calculate_poll_time() / 1us,
@@ -4270,6 +4299,10 @@ unsigned smp::adjust_max_networking_aio_io_control_blocks(unsigned network_iocbs
 
 void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_opts)
 {
+    // Install the crypto provider before anything else, so it is
+    // available to all reactors from the moment they start.
+    crypto::set_provider(reactor_opts.crypto_provider.get_selected_candidate()());
+
     bool use_transparent_hugepages = !reactor_opts.overprovisioned;
 
 #ifndef SEASTAR_NO_EXCEPTION_HACK

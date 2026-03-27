@@ -746,6 +746,8 @@ add_library (seastar
   src/core/io_queue.cc
   src/core/semaphore.cc
   src/core/condition-variable.cc
+  src/core/crypto.cc
+  src/core/crypto_gnutls.cc
   src/http/api_docs.cc
   src/http/common.cc
   src/http/file_handler.cc
@@ -803,6 +805,13 @@ add_library (seastar
   src/websocket/client.cc
   src/websocket/server.cc
   )
+
+if (Seastar_OPENSSL)
+  target_sources(seastar
+    PRIVATE
+      src/core/crypto_openssl.cc
+  )
+endif ()
 
 if (Seastar_MODULE)
   target_sources(seastar
@@ -1088,6 +1097,16 @@ if (Seastar_HWLOC)
 
   target_link_libraries (seastar
     PRIVATE hwloc::hwloc)
+endif ()
+
+set_option_if_package_is_found (Seastar_OPENSSL OpenSSL)
+if (Seastar_OPENSSL)
+  if (NOT OpenSSL_FOUND)
+    message (FATAL_ERROR "Seastar_OPENSSL is enabled but OpenSSL was not found!")
+  endif ()
+  list (APPEND Seastar_PRIVATE_COMPILE_DEFINITIONS SEASTAR_HAVE_OPENSSL)
+  target_link_libraries (seastar
+    PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif ()
 
 set_option_if_package_is_found (Seastar_IO_URING LibUring)
