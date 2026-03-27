@@ -3893,7 +3893,9 @@ static program_options::selection_value<crypto_provider_factory> create_crypto_p
 
     auto deleter = [] (crypto_provider_factory* p) { delete p; };
 
+#ifdef SEASTAR_HAVE_GNUTLS
     candidates.push_back({"gnutls", {new crypto_provider_factory(crypto::create_gnutls_provider), deleter}, {}});
+#endif
 
 #ifdef SEASTAR_HAVE_OPENSSL
     candidates.push_back({"openssl", {new crypto_provider_factory(crypto::create_openssl_provider), deleter}, {}});

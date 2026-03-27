@@ -116,8 +116,10 @@ crypto_provider& provider();
 /// Ownership is transferred to the crypto subsystem.
 void set_provider(std::unique_ptr<crypto_provider> p);
 
+#ifdef SEASTAR_HAVE_GNUTLS
 /// \brief Create a GnuTLS-backed crypto provider.
 std::unique_ptr<crypto_provider> create_gnutls_provider();
+#endif
 
 #ifdef SEASTAR_HAVE_OPENSSL
 /// \brief Create an OpenSSL-backed crypto provider.
