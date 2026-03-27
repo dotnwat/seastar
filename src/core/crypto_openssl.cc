@@ -47,6 +47,7 @@ public:
     std::unique_ptr<tls::dh_params_impl> make_dh_params(tls::dh_params::level) override;
     std::unique_ptr<tls::dh_params_impl> make_dh_params(const tls::blob&, tls::x509_crt_format) override;
     void init_error_codes() override;
+    const char* name() const override { return "openssl"; }
 };
 
 class openssl_crypto_provider final : public crypto_provider {
