@@ -235,12 +235,7 @@ tls::dh_params::~dh_params() {
 tls::dh_params::dh_params(dh_params&&) noexcept = default;
 tls::dh_params& tls::dh_params::operator=(dh_params&&) noexcept = default;
 
-future<tls::dh_params> tls::dh_params::from_file(
-        const sstring& filename, x509_crt_format fmt) {
-    return read_fully(filename, "dh parameters").then([fmt](temporary_buffer<char> buf) {
-        return make_ready_future<dh_params>(dh_params(blob(buf.get()), fmt));
-    });
-}
+
 
 class tls::x509_cert::impl : gnutlsobj {
 public:
