@@ -22,10 +22,46 @@
 #pragma once
 
 #include <seastar/core/sstring.hh>
+#include <cstdint>
 #include <memory>
 #include <string_view>
+#include <system_error>
+#include <vector>
+
+#include <seastar/core/shared_ptr.hh>
+
+namespace seastar::net { class connected_socket_impl; }
+namespace seastar::tls {
+    class session_impl;
+    class certificate_credentials;
+    enum class session_type;
+    struct tls_options;
+}
 
 namespace seastar::crypto {
+
+/// \brief Abstract interface for a TLS backend.
+///
+/// Provides factory methods for creating TLS sessions and accessing
+/// backend-specific error handling.  Retrieved via
+/// crypto_provider::get_tls_backend().
+class tls_backend {
+public:
+    virtual ~tls_backend() = default;
+
+    /// \brief Create a TLS session wrapping the given socket.
+    virtual shared_ptr<tls::session_impl> make_session(
+        tls::session_type type,
+        shared_ptr<tls::certificate_credentials> creds,
+        std::unique_ptr<net::connected_socket_impl> sock,
+        const tls::tls_options& options) = 0;
+
+    /// \brief Return the backend-specific TLS error category.
+    virtual const std::error_category& error_category() = 0;
+
+    /// \brief Generate a session ticket encryption key.
+    virtual std::vector<uint8_t> generate_session_ticket_key() = 0;
+};
 
 /// \brief Abstract interface for cryptographic primitives.
 ///
@@ -44,6 +80,9 @@ public:
     /// \brief Base64-encode \p input.
     /// \return The base64-encoded string.
     virtual sstring base64_encode(std::string_view input) = 0;
+
+    /// \brief Return the TLS backend for this crypto provider.
+    virtual tls_backend& get_tls_backend() = 0;
 };
 
 /// \brief Return the process-wide crypto provider.
