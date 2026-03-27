@@ -819,4 +819,25 @@ future<> tls::force_rehandshake(connected_socket& socket) {
     return s->force_rehandshake();
 }
 
-}
+} // namespace seastar
+
+// Error code globals — initialized at startup by the active backend's
+// init_error_codes() method, called from smp::configure().
+int seastar::tls::ERROR_UNKNOWN_COMPRESSION_ALGORITHM = 0;
+int seastar::tls::ERROR_UNKNOWN_CIPHER_TYPE = 0;
+int seastar::tls::ERROR_INVALID_SESSION = 0;
+int seastar::tls::ERROR_UNEXPECTED_HANDSHAKE_PACKET = 0;
+int seastar::tls::ERROR_UNKNOWN_CIPHER_SUITE = 0;
+int seastar::tls::ERROR_UNKNOWN_ALGORITHM = 0;
+int seastar::tls::ERROR_UNSUPPORTED_SIGNATURE_ALGORITHM = 0;
+int seastar::tls::ERROR_SAFE_RENEGOTIATION_FAILED = 0;
+int seastar::tls::ERROR_UNSAFE_RENEGOTIATION_DENIED = 0;
+int seastar::tls::ERROR_UNKNOWN_SRP_USERNAME = 0;
+int seastar::tls::ERROR_PREMATURE_TERMINATION = 0;
+int seastar::tls::ERROR_PUSH = 0;
+int seastar::tls::ERROR_PULL = 0;
+int seastar::tls::ERROR_UNEXPECTED_PACKET = 0;
+int seastar::tls::ERROR_UNSUPPORTED_VERSION = 0;
+int seastar::tls::ERROR_NO_CIPHER_SUITES = 0;
+int seastar::tls::ERROR_DECRYPTION_FAILED = 0;
+int seastar::tls::ERROR_MAC_VERIFY_FAILED = 0;
