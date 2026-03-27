@@ -703,6 +703,11 @@ namespace tls {
     const std::error_category& error_category();
 
     /**
+     * Returns the name of the active TLS backend (e.g. "gnutls", "openssl").
+     */
+    const char* backend_name();
+
+    /**
      * The more common error codes encountered in TLS.
      * Not an exhaustive list. Add exports as needed.
      */

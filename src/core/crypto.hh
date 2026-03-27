@@ -73,6 +73,9 @@ public:
 
     /// \brief Initialize backend-specific TLS error code constants.
     virtual void init_error_codes() = 0;
+
+    /// \brief Return the name of this TLS backend (e.g. "gnutls", "openssl").
+    virtual const char* name() const = 0;
 };
 
 /// \brief Abstract interface for cryptographic primitives.
