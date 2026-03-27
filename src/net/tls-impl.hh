@@ -47,6 +47,21 @@ public:
     }
 };
 
+struct file_info {
+    sstring filename;
+    std::chrono::system_clock::time_point modified;
+};
+
+struct file_result {
+    temporary_buffer<char> buf;
+    file_info file;
+    operator temporary_buffer<char>&&() && {
+        return std::move(buf);
+    }
+};
+
+future<file_result> read_fully(const sstring& name, const sstring& what);
+
 } // namespace seastar
 
 namespace seastar::tls {
