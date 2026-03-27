@@ -641,6 +641,7 @@ add_library (seastar
   include/seastar/http/short_streams.hh
   include/seastar/http/transformers.hh
   include/seastar/http/client.hh
+  include/seastar/crypto/md5.hh
   include/seastar/json/formatter.hh
   include/seastar/json/json_elements.hh
   include/seastar/net/api.hh

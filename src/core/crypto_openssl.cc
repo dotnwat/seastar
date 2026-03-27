@@ -29,6 +29,7 @@
 #include <seastar/util/defer.hh>
 #include <openssl/bio.h>
 #include <openssl/err.h>
+#include <cstring>
 #include <stdexcept>
 #include <fmt/format.h>
 
@@ -54,6 +55,7 @@ class openssl_crypto_provider final : public crypto_provider {
 public:
     sstring sha1_hash(std::string_view input) override;
     sstring base64_encode(std::string_view input) override;
+    md5_hasher make_md5_hasher() override;
     tls_backend& get_tls_backend() override;
 private:
     openssl_tls_backend _tls_backend;
@@ -84,6 +86,64 @@ sstring openssl_crypto_provider::base64_encode(std::string_view input) {
     auto base64_encoded = uninitialized_string<sstring>(encode_capacity(input.size()));
     EVP_EncodeBlock(reinterpret_cast<unsigned char *>(base64_encoded.data()), reinterpret_cast<const unsigned char *>(input.data()), input.size());
     return base64_encoded;
+}
+
+namespace {
+
+static_assert(sizeof(EVP_MD_CTX*) <= md5_hasher::max_ctx_size,
+    "EVP_MD_CTX* does not fit in md5_hasher inline storage");
+
+void openssl_md5_update(unsigned char* ctx, const void* data, size_t len) {
+    EVP_MD_CTX* mdctx;
+    std::memcpy(&mdctx, ctx, sizeof(mdctx));
+    if (1 != EVP_DigestUpdate(mdctx, data, len)) {
+        throw std::runtime_error("OpenSSL EVP_DigestUpdate(MD5) failed");
+    }
+}
+
+md5_hash openssl_md5_finalize(unsigned char* ctx) {
+    EVP_MD_CTX* mdctx;
+    std::memcpy(&mdctx, ctx, sizeof(mdctx));
+    md5_hash result;
+    unsigned int len = 0;
+    if (1 != EVP_DigestFinal_ex(mdctx, result.data.data(), &len)) {
+        EVP_MD_CTX_free(mdctx);
+        std::memset(ctx, 0, sizeof(mdctx));
+        throw std::runtime_error("OpenSSL EVP_DigestFinal_ex(MD5) failed");
+    }
+    EVP_MD_CTX_free(mdctx);
+    std::memset(ctx, 0, sizeof(mdctx));
+    return result;
+}
+
+void openssl_md5_destroy(unsigned char* ctx) {
+    EVP_MD_CTX* mdctx;
+    std::memcpy(&mdctx, ctx, sizeof(mdctx));
+    if (mdctx) {
+        EVP_MD_CTX_free(mdctx);
+    }
+}
+
+const md5_hasher::ops openssl_md5_ops = {
+    .update = openssl_md5_update,
+    .finalize = openssl_md5_finalize,
+    .destroy = openssl_md5_destroy,
+};
+
+} // anonymous namespace
+
+md5_hasher openssl_crypto_provider::make_md5_hasher() {
+    EVP_MD_CTX* mdctx = EVP_MD_CTX_new();
+    if (!mdctx) {
+        throw std::runtime_error("OpenSSL EVP_MD_CTX_new() failed");
+    }
+    if (1 != EVP_DigestInit_ex(mdctx, EVP_md5(), nullptr)) {
+        EVP_MD_CTX_free(mdctx);
+        throw std::runtime_error("OpenSSL EVP_DigestInit_ex(MD5) failed");
+    }
+    md5_hasher h(&openssl_md5_ops);
+    std::memcpy(h.ctx(), &mdctx, sizeof(mdctx));
+    return h;
 }
 
 shared_ptr<tls::session_impl> openssl_tls_backend::make_session(

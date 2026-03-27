@@ -26,6 +26,7 @@
 #include <seastar/util/defer.hh>
 #include <gnutls/crypto.h>
 #include <gnutls/gnutls.h>
+#include <cstring>
 #include <stdexcept>
 #include <fmt/format.h>
 
@@ -51,6 +52,7 @@ class gnutls_crypto_provider final : public crypto_provider {
 public:
     sstring sha1_hash(std::string_view input) override;
     sstring base64_encode(std::string_view input) override;
+    md5_hasher make_md5_hasher() override;
     tls_backend& get_tls_backend() override;
 private:
     gnutls_tls_backend _tls_backend;
@@ -76,6 +78,52 @@ sstring gnutls_crypto_provider::base64_encode(std::string_view input) {
     }
     auto free_encoded_data = defer([&] () noexcept { gnutls_free(encoded_data.data); });
     return sstring(reinterpret_cast<const char*>(encoded_data.data), encoded_data.size);
+}
+
+namespace {
+
+static_assert(sizeof(gnutls_hash_hd_t) <= md5_hasher::max_ctx_size,
+    "gnutls_hash_hd_t does not fit in md5_hasher inline storage");
+
+void gnutls_md5_update(unsigned char* ctx, const void* data, size_t len) {
+    gnutls_hash_hd_t handle;
+    std::memcpy(&handle, ctx, sizeof(handle));
+    gnutls_hash(handle, data, len);
+}
+
+md5_hash gnutls_md5_finalize(unsigned char* ctx) {
+    gnutls_hash_hd_t handle;
+    std::memcpy(&handle, ctx, sizeof(handle));
+    md5_hash result;
+    gnutls_hash_deinit(handle, result.data.data());
+    std::memset(ctx, 0, sizeof(handle));
+    return result;
+}
+
+void gnutls_md5_destroy(unsigned char* ctx) {
+    gnutls_hash_hd_t handle;
+    std::memcpy(&handle, ctx, sizeof(handle));
+    if (handle) {
+        gnutls_hash_deinit(handle, nullptr);
+    }
+}
+
+const md5_hasher::ops gnutls_md5_ops = {
+    .update = gnutls_md5_update,
+    .finalize = gnutls_md5_finalize,
+    .destroy = gnutls_md5_destroy,
+};
+
+} // anonymous namespace
+
+md5_hasher gnutls_crypto_provider::make_md5_hasher() {
+    md5_hasher h(&gnutls_md5_ops);
+    gnutls_hash_hd_t handle;
+    if (int ret = gnutls_hash_init(&handle, GNUTLS_DIG_MD5); ret != GNUTLS_E_SUCCESS) {
+        throw std::runtime_error(fmt::format("gnutls_hash_init(MD5): {}", gnutls_strerror(ret)));
+    }
+    std::memcpy(h.ctx(), &handle, sizeof(handle));
+    return h;
 }
 
 shared_ptr<tls::session_impl> gnutls_tls_backend::make_session(

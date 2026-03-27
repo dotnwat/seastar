@@ -22,6 +22,7 @@
 #pragma once
 
 #include <seastar/core/sstring.hh>
+#include <seastar/crypto/md5.hh>
 #include <cstdint>
 #include <memory>
 #include <string_view>
@@ -95,6 +96,9 @@ public:
     /// \brief Base64-encode \p input.
     /// \return The base64-encoded string.
     virtual sstring base64_encode(std::string_view input) = 0;
+
+    /// \brief Create an incremental MD5 hasher.
+    virtual md5_hasher make_md5_hasher() = 0;
 
     /// \brief Return the TLS backend for this crypto provider.
     virtual tls_backend& get_tls_backend() = 0;
