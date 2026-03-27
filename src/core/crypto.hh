@@ -70,6 +70,9 @@ public:
 
     /// \brief Create backend-specific DH parameters from raw data.
     virtual std::unique_ptr<tls::dh_params_impl> make_dh_params(const tls::blob&, tls::x509_crt_format) = 0;
+
+    /// \brief Initialize backend-specific TLS error code constants.
+    virtual void init_error_codes() = 0;
 };
 
 /// \brief Abstract interface for cryptographic primitives.
