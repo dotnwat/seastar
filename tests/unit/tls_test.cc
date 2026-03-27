@@ -1576,10 +1576,16 @@ SEASTAR_THREAD_TEST_CASE(test_peer_certificate_chain_handling) {
             return contents;
         };
 
-        auto ders = {read_file(certfile("test.crt.der"))};
+        auto expected_leaf = read_file(certfile("test.crt.der"));
 
-        BOOST_REQUIRE(std::ranges::equal(scrts, ders));
-        BOOST_REQUIRE(std::ranges::equal(ccrts, ders));
+        // The chain must contain at least the peer's leaf certificate.
+        // OpenSSL may also include additional chain certs (e.g. CA)
+        // via auto-chain, while GnuTLS only sends what was explicitly
+        // provided in the key file.
+        BOOST_REQUIRE(!scrts.empty());
+        BOOST_REQUIRE(scrts.front() == expected_leaf);
+        BOOST_REQUIRE(!ccrts.empty());
+        BOOST_REQUIRE(ccrts.front() == expected_leaf);
     }
 }
 
