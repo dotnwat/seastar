@@ -49,9 +49,9 @@
 #include "loopback_socket.hh"
 #include "tmpdir.hh"
 
-#include <gnutls/gnutls.h>
 
 #if 0
+#include <gnutls/gnutls.h>
 
 static void enable_gnutls_logging() {
     gnutls_global_set_log_level(99);
@@ -713,7 +713,6 @@ SEASTAR_TEST_CASE(test_simple_x509_client_server_again) {
     return run_echo_test(message, 20, certfile("catest.pem"), "test.scylladb.org");
 }
 
-#if GNUTLS_VERSION_NUMBER >= 0x030600
 // Test #769 - do not set dh_params in server certs - let gnutls negotiate.
 SEASTAR_TEST_CASE(test_simple_server_default_dhparams) {
     return run_echo_test(message, 20, certfile("catest.pem"), "test.scylladb.org",
@@ -721,7 +720,6 @@ SEASTAR_TEST_CASE(test_simple_server_default_dhparams) {
         {}, {}, true, /* use_dh_params */ false
     );
 }
-#endif
 
 SEASTAR_TEST_CASE(test_x509_client_server_cert_validation_fail) {
     // Load a real trust authority here, which our certs are _not_ signed with.
