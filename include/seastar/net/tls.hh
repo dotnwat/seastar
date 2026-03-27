@@ -21,6 +21,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <unordered_set>
 #include <map>
 #include <any>
@@ -114,6 +115,15 @@ namespace tls {
         x509_cert(shared_ptr<impl>);
         shared_ptr<impl> _impl;
     };
+
+    enum class tls_version {
+        tlsv1_0,
+        tlsv1_1,
+        tlsv1_2,
+        tlsv1_3
+    };
+
+    std::string_view format_as(tls_version);
 
     class abstract_credentials {
     protected:
@@ -226,6 +236,46 @@ namespace tls {
          */
         void set_enable_certificate_verification(bool enable);
 
+        /**
+         * Set the cipher string for TLS 1.2 and below.
+         * OpenSSL-specific; no-op for GnuTLS backend.
+         *
+         * See https://www.openssl.org/docs/manmaster/man3/SSL_CTX_set_cipher_list.html
+         */
+        void set_cipher_string(const sstring&);
+
+        /**
+         * Set the cipher suites for TLS 1.3.
+         * OpenSSL-specific; no-op for GnuTLS backend.
+         *
+         * See https://www.openssl.org/docs/manmaster/man3/SSL_CTX_set_ciphersuites.html
+         */
+        void set_ciphersuites(const sstring&);
+
+        /**
+         * Enable server cipher preference order during handshake.
+         * OpenSSL-specific; no-op for GnuTLS backend.
+         */
+        void enable_server_precedence();
+
+        /**
+         * Set the minimum TLS version for this connection.
+         * OpenSSL-specific; no-op for GnuTLS backend.
+         */
+        void set_minimum_tls_version(tls_version);
+
+        /**
+         * Set the maximum TLS version for this connection.
+         * OpenSSL-specific; no-op for GnuTLS backend.
+         */
+        void set_maximum_tls_version(tls_version);
+
+        /**
+         * Permit TLS renegotiation on TLS 1.2 and below.
+         * OpenSSL-specific; no-op for GnuTLS backend.
+         */
+        void enable_tls_renegotiation();
+
     private:
         friend class session;
         friend class server_session;
@@ -335,6 +385,14 @@ namespace tls {
          */
         void set_alpn_protocols(const std::vector<sstring>& protocols);
 
+        // OpenSSL-specific; stored but only applied when OpenSSL backend is active.
+        void set_cipher_string(const sstring&);
+        void set_ciphersuites(const sstring&);
+        void enable_server_precedence();
+        void set_minimum_tls_version(tls_version);
+        void set_maximum_tls_version(tls_version);
+        void enable_tls_renegotiation();
+
         void apply_to(certificate_credentials&) const;
 
         shared_ptr<certificate_credentials> build_certificate_credentials() const;
@@ -359,6 +417,12 @@ namespace tls {
         sstring _priority;
         std::vector<uint8_t> _session_resume_key;
         std::vector<sstring> _alpn_protocols;
+        sstring _cipher_string;
+        sstring _ciphersuites;
+        bool _enable_server_precedence = false;
+        bool _enable_tls_renegotiation = false;
+        std::optional<tls_version> _min_tls_version;
+        std::optional<tls_version> _max_tls_version;
     };
 
     using session_data = std::vector<uint8_t>;
@@ -660,6 +724,13 @@ namespace tls {
     extern const int ERROR_MAC_VERIFY_FAILED;
 }
 }
+
+template <> struct fmt::formatter<seastar::tls::tls_version> : fmt::formatter<string_view> {
+    template <typename FormatContext>
+    auto format(seastar::tls::tls_version v, FormatContext& ctx) const {
+        return formatter<string_view>::format(format_as(v), ctx);
+    }
+};
 
 template <> struct fmt::formatter<seastar::tls::subject_alt_name_type> : fmt::formatter<string_view> {
     template <typename FormatContext>

@@ -523,6 +523,30 @@ void tls::certificate_credentials::set_enable_certificate_verification(bool enab
     _impl->set_enable_certificate_verification(enable);
 }
 
+void tls::certificate_credentials::set_cipher_string(const sstring& s) {
+    _impl->set_cipher_string(s);
+}
+
+void tls::certificate_credentials::set_ciphersuites(const sstring& s) {
+    _impl->set_ciphersuites(s);
+}
+
+void tls::certificate_credentials::enable_server_precedence() {
+    _impl->enable_server_precedence();
+}
+
+void tls::certificate_credentials::set_minimum_tls_version(tls_version v) {
+    _impl->set_minimum_tls_version(v);
+}
+
+void tls::certificate_credentials::set_maximum_tls_version(tls_version v) {
+    _impl->set_maximum_tls_version(v);
+}
+
+void tls::certificate_credentials::enable_tls_renegotiation() {
+    _impl->enable_tls_renegotiation();
+}
+
 tls::server_credentials::server_credentials()
 #if GNUTLS_VERSION_NUMBER < 0x030600
     : server_credentials(dh_params{})
