@@ -160,4 +160,37 @@ void tls::credentials_builder::set_alpn_protocols(const std::vector<sstring>& pr
     _alpn_protocols = protocols;
 }
 
+std::string_view tls::format_as(subject_alt_name_type type) {
+    switch (type) {
+        case subject_alt_name_type::dnsname:
+            return "DNS";
+        case subject_alt_name_type::rfc822name:
+            return "EMAIL";
+        case subject_alt_name_type::uri:
+            return "URI";
+        case subject_alt_name_type::ipaddress:
+            return "IP";
+        case subject_alt_name_type::othername:
+            return "OTHERNAME";
+        case subject_alt_name_type::dn:
+            return "DIRNAME";
+        default:
+            return "UNKNOWN";
+    }
+}
+
+std::ostream& tls::operator<<(std::ostream& os, subject_alt_name_type type) {
+    return os << format_as(type);
+}
+
+std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name::value_type& v) {
+    fmt::print(os, "{}", v);
+    return os;
+}
+
+std::ostream& tls::operator<<(std::ostream& os, const subject_alt_name& a) {
+    fmt::print(os, "{}", a);
+    return os;
+}
+
 }
