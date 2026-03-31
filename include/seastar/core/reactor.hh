@@ -51,6 +51,7 @@
 #include <seastar/core/sstring.hh>
 #include <seastar/core/temporary_buffer.hh>
 #include <seastar/core/thread_cputime_clock.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/timer.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/net/api.hh>
@@ -783,7 +784,7 @@ public:
     };
 };
 
-extern __thread reactor* local_engine;
+extern thread_local tls_wrap<reactor*> local_engine;
 
 inline reactor& engine() {
     return *local_engine;

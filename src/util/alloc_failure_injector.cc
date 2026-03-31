@@ -20,6 +20,7 @@
  */
 
 #include <seastar/util/alloc_failure_injector.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/defer.hh>
@@ -29,7 +30,7 @@ namespace memory {
 
 static logger log("failure_injector");
 
-thread_local alloc_failure_injector the_alloc_failure_injector;
+thread_local tls_wrap<alloc_failure_injector> the_alloc_failure_injector;
 
 void alloc_failure_injector::fail() {
     _failed = true;

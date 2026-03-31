@@ -20,6 +20,7 @@
  */
 
 #include <seastar/core/scheduling.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/map_reduce.hh>
 #include <seastar/util/assert.hh>
 #include <array>
@@ -107,8 +108,9 @@ scheduling_group_specific_thread_local_data** get_scheduling_group_specific_thre
 #else
 inline
 scheduling_group_specific_thread_local_data** get_scheduling_group_specific_thread_local_data_ptr() noexcept {
-    static thread_local scheduling_group_specific_thread_local_data* data;
-    return &data;
+    static thread_local tls_wrap<scheduling_group_specific_thread_local_data*> data;
+    scheduling_group_specific_thread_local_data*& ref = data;
+    return &ref;
 }
 #endif
 inline

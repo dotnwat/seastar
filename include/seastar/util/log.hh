@@ -26,6 +26,7 @@
 #include <seastar/util/log-level.hh>
 #include <seastar/core/lowres_clock.hh>
 #include <seastar/util/std-compat.hh>
+#include <seastar/core/tls_wrap.hh>
 
 #include <concepts>
 #include <source_location>
@@ -65,9 +66,9 @@ class logger {
     static std::atomic<bool> _syslog;
     static unsigned _shard_field_width;
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-    static thread_local bool silent;
+    static thread_local tls_wrap<bool> silent;
 #else
-    static inline thread_local bool silent = false;
+    static inline thread_local tls_wrap<bool> silent = false;
 #endif
 
 public:
@@ -524,7 +525,7 @@ void apply_logging_settings(const logging_settings&);
 
 /// \cond internal
 
-extern thread_local uint64_t logging_failures;
+extern thread_local tls_wrap<uint64_t> logging_failures;
 
 sstring pretty_type_name(const std::type_info&);
 

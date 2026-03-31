@@ -307,7 +307,7 @@ rss_key_type interface::rss_key() const {
 }
 
 void interface::forward(unsigned cpuid, packet p) {
-    static __thread unsigned queue_depth;
+    static thread_local tls_wrap<unsigned> queue_depth;
 
     if (queue_depth < 1000) {
         queue_depth++;

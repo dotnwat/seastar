@@ -20,6 +20,7 @@
  */
 
 #include <seastar/core/future.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/websocket/common.hh>
 #include <seastar/core/byteorder.hh>
 #include "../core/crypto.hh"
@@ -44,7 +45,7 @@ future<> basic_connection<is_client, text_frame>::handle_pong() {
     return make_ready_future<>();
 }
 
-static thread_local std::mt19937 masking_rng{std::random_device{}()};
+static thread_local tls_wrap<std::mt19937> masking_rng{std::random_device{}()};
 
 static uint32_t generate_masking_key() {
     return masking_rng();

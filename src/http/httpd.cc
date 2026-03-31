@@ -34,6 +34,7 @@
 #include <vector>
 
 #include <seastar/core/sstring.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/app-template.hh>
 #include <seastar/core/circular_buffer.hh>
 #include <seastar/core/sharded.hh>
@@ -72,7 +73,7 @@ http_stats::http_stats(http_server& server, const sstring& name)
 }
 
 sstring http_server_control::generate_server_name() {
-    static thread_local uint16_t idgen;
+    static thread_local tls_wrap<uint16_t> idgen;
     return seastar::format("http-{}", idgen++);
 }
 

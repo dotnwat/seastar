@@ -23,6 +23,7 @@
 
 #include <seastar/core/cacheline.hh>
 #include <seastar/core/timer.hh>
+#include <seastar/core/tls_wrap.hh>
 
 #include <chrono>
 
@@ -58,10 +59,10 @@ public:
     static constexpr bool is_steady = true;
 private:
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-    static thread_local time_point _now;
+    static thread_local tls_wrap<time_point> _now;
 #else
     // Use inline variable to prevent the compiler from introducing an initialization guard
-    inline static thread_local time_point _now;
+    inline static thread_local tls_wrap<time_point> _now;
 #endif
 public:
     ///
@@ -92,10 +93,10 @@ public:
     static constexpr bool is_steady = false;
 private:
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-    static thread_local time_point _now;
+    static thread_local tls_wrap<time_point> _now;
 #else
     // Use inline variable to prevent the compiler from introducing an initialization guard
-    inline static thread_local time_point _now;
+    inline static thread_local tls_wrap<time_point> _now;
 #endif
     friend class lowres_clock; // for updates
 public:

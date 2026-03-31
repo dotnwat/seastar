@@ -60,6 +60,7 @@
 
 #include <seastar/core/exception_hacks.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/assert.hh>
 
@@ -125,7 +126,7 @@ void internal::increase_thrown_exceptions_counter() noexcept {
 seastar::logger exception_logger("exception");
 
 void log_exception_trace(seastar::log_level level) noexcept {
-    static thread_local bool nested = false;
+    static thread_local tls_wrap<bool> nested = false;
     if (!nested && exception_logger.is_enabled(level)) {
         nested = true;
         exception_logger.log(level, "Throw exception at:\n{}", current_backtrace());

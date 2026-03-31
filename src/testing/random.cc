@@ -21,12 +21,13 @@
 
 #include <random>
 #include <seastar/testing/test_runner.hh>
+#include <seastar/core/tls_wrap.hh>
 
 namespace seastar {
 
 namespace testing {
 
-thread_local std::default_random_engine local_random_engine;
+thread_local tls_wrap<std::default_random_engine> local_random_engine;
 
 } // namespace testing
 

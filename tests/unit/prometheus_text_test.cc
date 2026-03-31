@@ -24,6 +24,7 @@
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/metrics_registration.hh>
 #include <seastar/core/prometheus.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/util/closeable.hh>
 
@@ -45,7 +46,7 @@ namespace mi = sm::impl;
 
 using labels_list_type = std::vector<std::string>;
 
-thread_local auto impl_ = sm::impl::get_local_impl();
+thread_local seastar::tls_wrap<shared_ptr<mi::impl>> impl_ = sm::impl::get_local_impl();
 
 namespace {
 [[maybe_unused]] void remove_existing_metrics() {

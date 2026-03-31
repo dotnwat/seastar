@@ -21,6 +21,7 @@
  */
 
 #include <seastar/core/thread.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/do_with.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
@@ -180,7 +181,7 @@ struct test_thread_custom_stack_size_failure : public seastar::testing::seastar_
 static test_thread_custom_stack_size_failure test_thread_custom_stack_size_failure_instance(
     "test_thread_custom_stack_size_failure",
     __FILE__, __LINE__);
-static thread_local volatile bool stack_guard_bypassed = false;
+static thread_local tls_wrap<volatile bool> stack_guard_bypassed = false;
 
 static int get_mprotect_flags(void* ctx) {
     int flags;
@@ -198,7 +199,7 @@ static void* pagealign(void* ptr, size_t page_size) {
     return reinterpret_cast<void*>(((reinterpret_cast<intptr_t>((ptr)) >> pageshift) << pageshift));
 }
 
-static thread_local struct sigaction default_old_sigsegv_handler;
+static thread_local tls_wrap<struct sigaction> default_old_sigsegv_handler;
 
 static void bypass_stack_guard(int sig, siginfo_t* si, void* ctx) {
     SEASTAR_ASSERT(sig == SIGSEGV);

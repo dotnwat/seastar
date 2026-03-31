@@ -29,6 +29,7 @@
 #include <seastar/core/reactor_config.hh>
 #include <seastar/core/resource.hh>
 #include <seastar/core/shard_id.hh>
+#include <seastar/core/tls_wrap.hh>
 
 #include <boost/lockfree/spsc_queue.hpp>
 #include <deque>
@@ -312,8 +313,8 @@ class smp : public std::enable_shared_from_this<smp> {
       void operator()(smp_message_queue** qs) const;
     };
     std::unique_ptr<smp_message_queue*[], qs_deleter> _qs_owner;
-    static thread_local smp_message_queue**_qs;
-    static thread_local std::thread::id _tmain;
+    static thread_local tls_wrap<smp_message_queue**>_qs;
+    static thread_local tls_wrap<std::thread::id> _tmain;
     bool _using_dpdk = false;
     std::vector<unsigned> _shard_to_numa_node_mapping;
 

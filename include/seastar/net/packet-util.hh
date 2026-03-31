@@ -22,6 +22,7 @@
 #pragma once
 
 #include <seastar/net/packet.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <map>
 
 namespace seastar {
@@ -32,7 +33,7 @@ template <typename Offset, typename Tag>
 class packet_merger {
 private:
     static uint64_t& linearizations_ref() {
-        static thread_local uint64_t linearization_count;
+        static thread_local tls_wrap<uint64_t> linearization_count;
         return linearization_count;
     }
 public:

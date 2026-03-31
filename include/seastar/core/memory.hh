@@ -23,6 +23,7 @@
 
 #include <seastar/core/resource.hh>
 #include <seastar/core/bitops.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/backtrace.hh>
 #include <seastar/util/sampler.hh>
 #include <new>
@@ -170,7 +171,7 @@ void configure_minimal();
 
 namespace internal {
 
-extern thread_local constinit int abort_on_alloc_failure_suppressed;
+extern thread_local tls_wrap<int> abort_on_alloc_failure_suppressed;
 
 }
 

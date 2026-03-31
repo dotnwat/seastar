@@ -21,8 +21,10 @@
 
 #include <seastar/rpc/lz4_fragmented_compressor.hh>
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/assert.hh>
 
+#include <array>
 #include <lz4.h>
 // LZ4_DECODER_RING_BUFFER_SIZE macro is introduced since v1.8.2
 // To work with previous lz4 release, copied the definition in lz4 here
@@ -80,7 +82,7 @@ struct decompression_stream_deleter {
 }
 
 snd_buf lz4_fragmented_compressor::compress(size_t head_space, snd_buf data) {
-    static thread_local auto stream = std::unique_ptr<LZ4_stream_t, compression_stream_deleter>(LZ4_createStream());
+    static thread_local tls_wrap<std::unique_ptr<LZ4_stream_t, compression_stream_deleter>> stream(LZ4_createStream());
     static_assert(chunk_size <= snd_buf::chunk_size, "chunk_size <= snd_buf::chunk_size");
 
     LZ4_resetStream(stream.get());
@@ -134,7 +136,7 @@ snd_buf lz4_fragmented_compressor::compress(size_t head_space, snd_buf data) {
     // stable in this or input buffer, thus make the temp buffer
     // LZ4_DECODER_RING_BUFFER_SIZE(chunk_size) large, and treat it as a ring.
     static constexpr auto lin_buf_size = LZ4_DECODER_RING_BUFFER_SIZE(chunk_size);
-    static thread_local char temporary_chunk_data[lin_buf_size];
+    static thread_local tls_wrap<std::array<char, lin_buf_size>> temporary_chunk_data;
     size_t lin_off = 0;
 
     auto maybe_linearize = [&](size_t size) {
@@ -145,7 +147,7 @@ snd_buf lz4_fragmented_compressor::compress(size_t head_space, snd_buf data) {
             if (lin_buf_size - lin_off < size) {
                 lin_off = 0;
             }
-            auto tmp = temporary_chunk_data + std::exchange(lin_off, lin_off + size);
+            auto tmp = temporary_chunk_data.data() + std::exchange(lin_off, lin_off + size);
             src_ptr = tmp;
             while (left) {
                 auto this_size = std::min(src->size() - src_current_offset, left);
@@ -218,7 +220,7 @@ rcv_buf lz4_fragmented_compressor::decompress(rcv_buf data) {
         return rcv_buf();
     }
 
-    static thread_local auto stream = std::unique_ptr<LZ4_streamDecode_t, decompression_stream_deleter>(LZ4_createStreamDecode());
+    static thread_local tls_wrap<std::unique_ptr<LZ4_streamDecode_t, decompression_stream_deleter>> stream(LZ4_createStreamDecode());
 
     if (!LZ4_setStreamDecode(stream.get(), nullptr, 0)) {
         throw std::runtime_error("RPC frame LZ4_FRAGMENTED decompression failed to reset state");
@@ -287,7 +289,7 @@ rcv_buf lz4_fragmented_compressor::decompress(rcv_buf data) {
 
     // Let's be a bit paranoid and not assume that the remote has the same
     // LZ4_COMPRESSBOUND as we do and allow any compressed chunk size.
-    static thread_local auto chunk_buffer = temporary_buffer<char>(LZ4_COMPRESSBOUND(chunk_size));
+    static thread_local tls_wrap<temporary_buffer<char>> chunk_buffer(LZ4_COMPRESSBOUND(chunk_size));
 
     std::vector<temporary_buffer<char>> dst_buffers;
     size_t total_size = 0;

@@ -59,6 +59,7 @@ module seastar;
 #else
 #include <seastar/core/gate.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/sstring.hh>
 #include <seastar/core/with_timeout.hh>
 #include <seastar/net/stack.hh>
@@ -2236,7 +2237,7 @@ bio_method_ptr create_bio_method() {
 } // namespace tls
 
 BIO_METHOD* get_method() {
-    static thread_local bio_method_ptr method_ptr = [] {
+    static thread_local tls_wrap<bio_method_ptr> method_ptr = [] {
         return tls::create_bio_method();
     }();
 

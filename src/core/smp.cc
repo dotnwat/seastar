@@ -28,6 +28,7 @@
 #include <fcntl.h>
 
 #include <seastar/core/smp.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/alien.hh>
 #include <seastar/core/resource.hh>
 #include <seastar/core/loop.hh>
@@ -44,8 +45,9 @@ extern logger seastar_logger;
 
 #ifdef SEASTAR_BUILD_SHARED_LIBS
 shard_id* internal::this_shard_id_ptr() noexcept {
-    static thread_local shard_id g_this_shard_id;
-    return &g_this_shard_id;
+    static thread_local tls_wrap<shard_id> g_this_shard_id;
+    shard_id& ref = g_this_shard_id;
+    return &ref;
 }
 #endif
 
@@ -60,8 +62,8 @@ struct smp_service_group_impl {
 #endif
 };
 
-static thread_local smp_service_group_semaphore smp_service_group_management_sem{1, named_semaphore_exception_factory{"smp_service_group_management_sem"}};
-static thread_local std::vector<smp_service_group_impl> smp_service_groups;
+static thread_local tls_wrap<smp_service_group_semaphore> smp_service_group_management_sem{1, named_semaphore_exception_factory{"smp_service_group_management_sem"}};
+static thread_local tls_wrap<std::vector<smp_service_group_impl>> smp_service_groups;
 
 static named_semaphore_exception_factory make_service_group_semaphore_exception_factory(unsigned id, shard_id client_cpu, shard_id this_cpu, std::optional<sstring> smp_group_name) {
     if (smp_group_name) {

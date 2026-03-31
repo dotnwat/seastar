@@ -45,6 +45,7 @@
 
 #include <seastar/util/log.hh>
 #include <seastar/util/log-cli.hh>
+#include <seastar/core/tls_wrap.hh>
 
 #include <seastar/util/internal/array_map.hh>
 #include <seastar/core/reactor.hh>
@@ -177,7 +178,7 @@ log_buf::~log_buf() {
 
 } // namespace internal
 
-thread_local uint64_t logging_failures = 0;
+thread_local tls_wrap<uint64_t> logging_failures = 0;
 
 void validate(boost::any& v,
               const std::vector<std::string>& values,
@@ -252,7 +253,7 @@ static internal::log_buf::inserter_iterator print_real_timestamp(internal::log_b
         std::array<char, 32> static_buf; // big enough to hold '2023-01-14 15:06:33'
         internal::log_buf buf{static_buf.data(), static_buf.size()};
     };
-    static thread_local a_second this_second;
+    static thread_local tls_wrap<a_second> this_second;
     using clock = std::chrono::system_clock;
     auto n = clock::now();
     auto t = clock::to_time_t(n);
@@ -297,7 +298,7 @@ std::atomic<bool> logger::_ostream = { true };
 std::atomic<bool> logger::_syslog = { false };
 unsigned logger::_shard_field_width = 1;
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-thread_local bool logger::silent = false;
+thread_local tls_wrap<bool> logger::silent = false;
 #endif
 
 logger::logger(sstring name) : _name(std::move(name)) {
@@ -312,7 +313,7 @@ logger::~logger() {
     global_logger_registry().unregister_logger(this);
 }
 
-static thread_local std::array<char, 8192> static_log_buf;
+static thread_local tls_wrap<std::array<char, 8192>> static_log_buf;
 
 bool logger::rate_limit::check() {
     const auto now = clock::now();

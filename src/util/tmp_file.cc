@@ -24,6 +24,7 @@
 #include <random>
 
 #include <seastar/core/seastar.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/exceptions.hh>
 #include <seastar/util/std-compat.hh>
@@ -52,8 +53,8 @@ generate_tmp_name(const fs::path& path_template) {
     }
     auto end = filename.size();
     static constexpr char charset[] = "0123456789abcdef";
-    static thread_local std::default_random_engine engine(std::random_device{}());
-    static thread_local std::uniform_int_distribution<int> dist(0, sizeof(charset) - 2);
+    static thread_local tls_wrap<std::default_random_engine> engine(std::random_device{}());
+    static thread_local tls_wrap<std::uniform_int_distribution<int>> dist(0, sizeof(charset) - 2);
     while (pos < end && filename[pos] == 'X') {
         filename[pos++] = charset[dist(engine)];
     }

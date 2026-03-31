@@ -22,6 +22,7 @@
 
 #pragma once
 #include <seastar/core/preempt.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/std-compat.hh>
 #include <setjmp.h>
 #include <ucontext.h>
@@ -54,12 +55,13 @@ public:
     void final_switch_out();
 };
 
-extern thread_local jmp_buf_link* g_current_context;
+extern thread_local tls_wrap<jmp_buf_link*> g_current_context;
 
 namespace thread_impl {
 
 inline thread_context* get() {
-    return g_current_context->thread;
+    jmp_buf_link* ctx = g_current_context;
+    return ctx->thread;
 }
 
 inline bool should_yield() {

@@ -38,6 +38,7 @@
 #include <seastar/core/sharded.hh>
 #include <seastar/core/bitops.hh>
 #include <seastar/core/slab.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/align.hh>
 #include <seastar/core/print.hh>
 #include <seastar/net/api.hh>
@@ -67,8 +68,8 @@ namespace bi = boost::intrusive;
 static constexpr double default_slab_growth_factor = 1.25;
 static constexpr uint64_t default_slab_page_size = 1UL*MB;
 static constexpr uint64_t default_per_cpu_slab_size = 0UL; // zero means reclaimer is enabled.
-static __thread slab_allocator<item>* slab;
-static thread_local std::unique_ptr<slab_allocator<item>> slab_holder;
+static thread_local tls_wrap<slab_allocator<item>*> slab;
+static thread_local tls_wrap<std::unique_ptr<slab_allocator<item>>> slab_holder;
 
 template<typename T>
 using optional = std::optional<T>;

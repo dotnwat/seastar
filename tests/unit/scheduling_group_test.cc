@@ -24,6 +24,7 @@
 #include <chrono>
 
 #include <seastar/core/thread.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/thread_test_case.hh>
 #include <seastar/testing/test_runner.hh>
@@ -420,7 +421,7 @@ SEASTAR_THREAD_TEST_CASE(sg_create_with_destroy_tasks) {
 }
 
 SEASTAR_THREAD_TEST_CASE(sg_create_check_unique_constructor_invocation) {
-    static thread_local std::set<unsigned> groups;
+    static thread_local tls_wrap<std::set<unsigned>> groups;
 
     // check we don't run constructor in same sched group more than once.
     struct check {

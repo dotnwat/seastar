@@ -22,12 +22,13 @@
 #pragma once
 
 #include <random>
+#include <seastar/core/tls_wrap.hh>
 
 namespace seastar {
 
 namespace testing {
 
-extern thread_local std::default_random_engine local_random_engine;
+extern thread_local tls_wrap<std::default_random_engine> local_random_engine;
 
 } // namespace testing
 

@@ -36,6 +36,7 @@
 #include <boost/intrusive/list.hpp>
 
 #include <seastar/core/thread.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/posix.hh>
 #include <seastar/core/internal/current_task.hh>
 #include <seastar/util/assert.hh>
@@ -44,8 +45,8 @@
 
 namespace seastar {
 
-thread_local jmp_buf_link g_unthreaded_context;
-thread_local jmp_buf_link* g_current_context;
+thread_local tls_wrap<jmp_buf_link> g_unthreaded_context;
+thread_local tls_wrap<jmp_buf_link*> g_current_context;
 
 #ifdef SEASTAR_ASAN_ENABLED
 
@@ -69,7 +70,7 @@ static inline void __sanitizer_start_switch_fiber(...) { }
 static inline void __sanitizer_finish_switch_fiber(...) { }
 #endif
 
-thread_local jmp_buf_link* g_previous_context;
+thread_local tls_wrap<jmp_buf_link*> g_previous_context;
 
 }
 
@@ -263,7 +264,7 @@ thread_context::should_yield() const {
     return need_preempt();
 }
 
-thread_local thread_context::all_thread_list thread_context::_all_threads;
+thread_local tls_wrap<thread_context::all_thread_list> thread_context::_all_threads;
 
 void
 thread_context::run_and_dispose() noexcept {

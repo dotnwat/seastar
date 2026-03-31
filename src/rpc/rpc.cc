@@ -1,5 +1,6 @@
 #include <seastar/rpc/rpc.hh>
 #include <seastar/rpc/multi_algo_compressor_factory.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/align.hh>
 #include <seastar/core/seastar.hh>
 #include <seastar/core/print.hh>
@@ -866,7 +867,7 @@ struct client::metrics::domain {
     stats dead;
     seastar::metrics::metric_groups metric_groups;
 
-    static thread_local std::unordered_map<sstring, domain> all;
+    static thread_local tls_wrap<std::unordered_map<sstring, domain>> all;
     static domain& find_or_create(sstring name);
 
     stats::counter_type count_all(stats::counter_type stats::* field) noexcept {
@@ -918,7 +919,7 @@ struct client::metrics::domain {
     }
 };
 
-thread_local std::unordered_map<sstring, client::metrics::domain> client::metrics::domain::all;
+thread_local tls_wrap<std::unordered_map<sstring, client::metrics::domain>> client::metrics::domain::all;
 
 client::metrics::domain& client::metrics::domain::find_or_create(sstring name) {
     auto i = all.try_emplace(name, name);
@@ -1306,7 +1307,7 @@ future<> server::connection::abort_all_streams() {
     });
 }
 
-thread_local std::unordered_map<streaming_domain_type, server*> server::_servers;
+thread_local tls_wrap<std::unordered_map<streaming_domain_type, server*>> server::_servers;
 
 server::server(protocol_base* proto, const socket_address& addr, resource_limits limits)
         : server(proto, seastar::listen(addr, listen_options{true}), limits, server_options{})

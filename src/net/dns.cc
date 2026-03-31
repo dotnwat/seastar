@@ -62,6 +62,7 @@
 #include <seastar/core/reactor.hh>
 #include <seastar/core/gate.hh>
 #include <seastar/core/print.hh>
+#include <seastar/core/tls_wrap.hh>
 
 namespace seastar::net {
 
@@ -1571,7 +1572,7 @@ future<> dns_resolver::close() {
 }
 
 static dns_resolver& resolver() {
-    static thread_local dns_resolver resolver;
+    static thread_local tls_wrap<dns_resolver> resolver;
     return resolver;
 }
 

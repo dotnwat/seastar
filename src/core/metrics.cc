@@ -32,6 +32,7 @@
 
 #include <seastar/core/metrics.hh>
 #include <seastar/core/metrics_api.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/relabel_config.hh>
 #include <seastar/core/reactor.hh>
 
@@ -407,7 +408,7 @@ bool metric_id::operator==(
 // need to be available before the first users (reactor) will call it
 
 shared_ptr<impl>  get_local_impl() {
-    static thread_local auto the_impl = ::seastar::make_shared<impl>();
+    static thread_local tls_wrap<shared_ptr<impl>> the_impl{::seastar::make_shared<impl>()};
     return the_impl;
 }
 void impl::remove_registration(const metric_id& id) {

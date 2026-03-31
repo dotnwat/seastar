@@ -19,6 +19,7 @@
 #include <exception>
 #include <random>
 #include <seastar/core/future.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/coroutine/all.hh>
 #include <seastar/websocket/client.hh>
 #include <seastar/core/when_all.hh>
@@ -32,7 +33,7 @@ using namespace std::string_view_literals;
 // refer https://datatracker.ietf.org/doc/html/rfc6455#section-1.3
 constexpr auto magic_key_suffix_client = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"sv;
 
-static thread_local std::mt19937 rng(std::random_device{}());
+static thread_local tls_wrap<std::mt19937> rng(std::random_device{}());
 
 static sstring generate_websocket_key() {
     char raw[16];

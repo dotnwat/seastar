@@ -64,6 +64,7 @@
 #include <seastar/core/internal/uname.hh>
 #include <seastar/core/internal/io_intent.hh>
 #include <seastar/core/reactor.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/file.hh>
 #include <seastar/core/report_exception.hh>
 #include <seastar/util/later.hh>
@@ -1264,7 +1265,7 @@ make_file_impl(int fd, file_open_options options, int flags, struct stat st) noe
     }
 
     auto st_dev = st.st_dev;
-    static thread_local std::unordered_map<decltype(st_dev), internal::fs_info> s_fstype;
+    static thread_local tls_wrap<std::unordered_map<decltype(st_dev), internal::fs_info>> s_fstype;
 
     auto i = s_fstype.find(st_dev);
     if (i == s_fstype.end()) [[unlikely]] {

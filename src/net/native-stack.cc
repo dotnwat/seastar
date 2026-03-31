@@ -148,7 +148,7 @@ void create_native_net_device(const native_stack_options& opts) {
 // native_network_stack
 class native_network_stack : public network_stack {
 public:
-    static thread_local promise<std::unique_ptr<network_stack>> ready_promise;
+    static thread_local tls_wrap<promise<std::unique_ptr<network_stack>>> ready_promise;
 private:
     interface _netif;
     ipv4 _inet;
@@ -202,7 +202,7 @@ public:
     }
 };
 
-thread_local promise<std::unique_ptr<network_stack>> native_network_stack::ready_promise;
+thread_local tls_wrap<promise<std::unique_ptr<network_stack>>> native_network_stack::ready_promise;
 
 udp_channel
 native_network_stack::make_udp_channel(const socket_address& addr) {

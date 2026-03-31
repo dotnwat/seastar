@@ -23,6 +23,7 @@
 #include <boost/test/execution_monitor.hpp>
 
 #include <seastar/core/sleep.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/testing/test_case.hh>
 #include <seastar/testing/test_fixture.hh>
 
@@ -102,9 +103,9 @@ SEASTAR_FIXTURE_THREAD_TEST_CASE(test_single_thread_test_fixture_thread_fixt, Th
 
 // having these thread local subtly verifies that the fixture
 // is run on the proper shard.
-static thread_local int num_shared_test_fixts_setup = 0;
-static thread_local int num_shared_test_fixts_teardown = 0;
-static thread_local std::string shared_test_fixts_string;
+static thread_local tls_wrap<int> num_shared_test_fixts_setup = 0;
+static thread_local tls_wrap<int> num_shared_test_fixts_teardown = 0;
+static thread_local tls_wrap<std::string> shared_test_fixts_string;
 
 struct SharedTestFixture {
     SharedTestFixture()

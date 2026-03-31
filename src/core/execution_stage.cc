@@ -21,6 +21,7 @@
 
 #include <seastar/core/execution_stage.hh>
 #include <seastar/core/print.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/make_task.hh>
 #include <seastar/util/defer.hh>
 
@@ -89,7 +90,7 @@ bool execution_stage_manager::poll() const noexcept {
 }
 
 execution_stage_manager& execution_stage_manager::get() noexcept {
-    static thread_local execution_stage_manager instance;
+    static thread_local tls_wrap<execution_stage_manager> instance;
     return instance;
 }
 

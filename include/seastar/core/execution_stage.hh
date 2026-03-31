@@ -191,6 +191,7 @@ private:
     execution_stage_manager() = default;
     execution_stage_manager(const execution_stage_manager&) = delete;
     execution_stage_manager(execution_stage_manager&&) = delete;
+    friend class tls_wrap<execution_stage_manager>;
 public:
     void register_execution_stage(execution_stage& stage);
     void unregister_execution_stage(execution_stage& stage) noexcept;

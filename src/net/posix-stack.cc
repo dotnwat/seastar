@@ -43,6 +43,7 @@
 #include <seastar/core/coroutine.hh>
 #include <seastar/core/byteorder.hh>
 #include <seastar/net/posix-stack.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/net/net.hh>
 #include <seastar/net/packet.hh>
 #include <seastar/net/api.hh>
@@ -77,8 +78,8 @@ copy_reinterpret_cast(const void* ptr) {
     return tmp;
 }
 
-thread_local std::array<uint64_t, seastar::max_scheduling_groups()> bytes_sent = {};
-thread_local std::array<uint64_t, seastar::max_scheduling_groups()> bytes_received = {};
+thread_local seastar::tls_wrap<std::array<uint64_t, seastar::max_scheduling_groups()>> bytes_sent = {};
+thread_local seastar::tls_wrap<std::array<uint64_t, seastar::max_scheduling_groups()>> bytes_received = {};
 
 }
 
@@ -143,9 +144,9 @@ public:
     }
 };
 
-thread_local posix_ap_server_socket_impl::port_map_t posix_ap_server_socket_impl::ports{};
-thread_local posix_ap_server_socket_impl::sockets_map_t posix_ap_server_socket_impl::sockets{};
-thread_local posix_ap_server_socket_impl::conn_map_t posix_ap_server_socket_impl::conn_q{};
+thread_local tls_wrap<posix_ap_server_socket_impl::port_map_t> posix_ap_server_socket_impl::ports{};
+thread_local tls_wrap<posix_ap_server_socket_impl::sockets_map_t> posix_ap_server_socket_impl::sockets{};
+thread_local tls_wrap<posix_ap_server_socket_impl::conn_map_t> posix_ap_server_socket_impl::conn_q{};
 
 class posix_tcp_connected_socket_operations : public posix_connected_socket_operations {
 public:
@@ -472,8 +473,8 @@ class posix_socket_impl final : public socket_impl {
     const int _sock_flags;
 
     future<> find_port_and_connect(socket_address sa, socket_address local, transport proto = transport::TCP) {
-        static thread_local std::default_random_engine random_engine{std::random_device{}()};
-        static thread_local std::uniform_int_distribution<uint16_t> u(49152/smp::count + 1, 65535/smp::count - 1);
+        static thread_local tls_wrap<std::default_random_engine> random_engine{std::random_device{}()};
+        static thread_local tls_wrap<std::uniform_int_distribution<uint16_t>> u(49152/smp::count + 1, 65535/smp::count - 1);
         // If no explicit local address, set to dest address family wildcard.
         if (local.is_unspecified()) {
             local = net::inet_address(sa.addr().in_family());
@@ -562,7 +563,7 @@ public:
 static
 unsigned
 get_port_or_counter(const socket_address& sa) {
-    static thread_local constinit unsigned counter = 0;
+    static thread_local tls_wrap<unsigned> counter = 0;
     switch (sa.family()) {
     case AF_INET:
         return ntoh(sa.as_posix_sockaddr_in().sin_port);
@@ -1411,7 +1412,7 @@ std::vector<network_interface> posix_network_stack::network_interfaces() {
 
     // And a similarly immutable set of shared_ptr to network_interface_impl per shard, ready
     // to be handed out to callers with minimal overhead
-    static const thread_local std::vector<shared_ptr<posix_network_interface_impl>> thread_local_interfaces = [] {
+    static const thread_local tls_wrap<std::vector<shared_ptr<posix_network_interface_impl>>> thread_local_interfaces = [] {
         std::vector<shared_ptr<posix_network_interface_impl>> res;
         res.reserve(global_interfaces.size());
         std::transform(global_interfaces.begin(), global_interfaces.end(), std::back_inserter(res), [](const posix_network_interface_impl& impl) {

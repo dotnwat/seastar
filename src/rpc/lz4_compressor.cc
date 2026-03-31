@@ -21,6 +21,7 @@
 
 #include <seastar/rpc/lz4_compressor.hh>
 #include <seastar/core/byteorder.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <lz4.h>
 
 namespace seastar {
@@ -114,9 +115,9 @@ public:
     }
 };
 
-static thread_local reusable_buffer reusable_buffer_compressed_data;
-static thread_local reusable_buffer reusable_buffer_decompressed_data;
-static thread_local size_t buffer_use_count = 0;
+static thread_local tls_wrap<reusable_buffer> reusable_buffer_compressed_data;
+static thread_local tls_wrap<reusable_buffer> reusable_buffer_decompressed_data;
+static thread_local tls_wrap<size_t> buffer_use_count = 0;
 static constexpr size_t drop_buffers_trigger = 100'000;
 
 static void after_buffer_use() noexcept {

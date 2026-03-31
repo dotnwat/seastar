@@ -21,6 +21,7 @@
 
 
 #include <seastar/core/app-template.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/future.hh>
 #include <seastar/core/scheduling.hh>
 #include <seastar/core/thread.hh>
@@ -51,7 +52,7 @@ compute_intensive_task(Duration duration, unsigned& counter, Func func) {
 future<>
 heavy_task(unsigned& counter) {
     return compute_intensive_task(1ms, counter, [] {
-        static thread_local double x = 1;
+        static thread_local tls_wrap<double> x = 1;
         x = std::exp(x) / 3;
     });
 }
@@ -59,7 +60,7 @@ heavy_task(unsigned& counter) {
 future<>
 light_task(unsigned& counter) {
     return compute_intensive_task(100us, counter, [] {
-        static thread_local double x = 0.1;
+        static thread_local tls_wrap<double> x = 0.1;
         x = std::log(x + 1);
     });
 }
@@ -67,7 +68,7 @@ light_task(unsigned& counter) {
 future<>
 medium_task(unsigned& counter) {
     return compute_intensive_task(400us, counter, [] {
-        static thread_local double x = 0.1;
+        static thread_local tls_wrap<double> x = 0.1;
         x = std::cos(x);
     });
 }

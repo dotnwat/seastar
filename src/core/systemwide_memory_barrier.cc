@@ -33,6 +33,7 @@
 
 #include <seastar/core/internal/systemwide_memory_barrier.hh>
 #include <seastar/core/cacheline.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/log.hh>
 #include <seastar/util/assert.hh>
 
@@ -82,7 +83,7 @@ systemwide_memory_barrier() {
     }
 
     // FIXME: use sys_membarrier() when available
-    static thread_local char* mem = [] {
+    static thread_local tls_wrap<char*> mem = [] {
        void* mem = mmap(nullptr, getpagesize(),
                PROT_READ | PROT_WRITE,
                MAP_PRIVATE | MAP_ANONYMOUS,

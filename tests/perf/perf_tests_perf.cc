@@ -18,6 +18,7 @@
 
 #include <random>
 #include <seastar/core/future.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/coroutine/maybe_yield.hh>
 #include <seastar/util/later.hh>
 #include <seastar/core/coroutine.hh>
@@ -86,7 +87,7 @@ PERF_TEST(output_check, high_runtime_allocs) {
 
 PERF_TEST(output_check, highly_variable_runtime) {
     auto rand = [](size_t max) {
-        static thread_local std::default_random_engine gen(std::random_device{}());
+        static thread_local seastar::tls_wrap<std::default_random_engine> gen(std::random_device{}());
         return std::uniform_int_distribution<>(0, max)(gen);
     };
     size_t iters = rand(2) ? rand(10000000) : rand(100);

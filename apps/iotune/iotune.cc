@@ -47,6 +47,7 @@
 #include <seastar/core/aligned_buffer.hh>
 #include <seastar/core/sharded.hh>
 #include <seastar/core/app-template.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/core/shared_ptr.hh>
 #include <seastar/core/fsqual.hh>
 #include <seastar/core/loop.hh>
@@ -62,7 +63,7 @@ namespace fs = std::filesystem;
 logger iotune_logger("iotune");
 
 using iotune_clock = std::chrono::steady_clock;
-static thread_local std::default_random_engine random_generator(std::chrono::duration_cast<std::chrono::nanoseconds>(iotune_clock::now().time_since_epoch()).count());
+static thread_local tls_wrap<std::default_random_engine> random_generator(std::chrono::duration_cast<std::chrono::nanoseconds>(iotune_clock::now().time_since_epoch()).count());
 
 void check_device_properties(fs::path dev_sys_file) {
     auto sched_file = dev_sys_file / "queue" / "scheduler";

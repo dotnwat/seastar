@@ -26,6 +26,7 @@
 #include <functional>
 #include <seastar/util/noncopyable_function.hh>
 #include <seastar/util/critical_alloc_section.hh>
+#include <seastar/core/tls_wrap.hh>
 
 namespace seastar {
 namespace memory {
@@ -91,7 +92,7 @@ public:
 };
 
 /// \cond internal
-extern thread_local alloc_failure_injector the_alloc_failure_injector;
+extern thread_local tls_wrap<alloc_failure_injector> the_alloc_failure_injector;
 /// \endcond
 
 /// \brief Return the shard-local \ref alloc_failure_injector instance.

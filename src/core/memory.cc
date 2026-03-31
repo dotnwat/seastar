@@ -106,6 +106,7 @@
 #include <seastar/core/cacheline.hh>
 #include <seastar/core/memory.hh>
 #include <seastar/core/print.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/alloc_failure_injector.hh>
 #include <seastar/util/memory_diagnostics.hh>
 #include <seastar/util/std-compat.hh>
@@ -152,7 +153,7 @@ seastar::logger seastar_memory_logger("seastar_memory");
 
 namespace internal {
 
-thread_local constinit int abort_on_alloc_failure_suppressed = 0;
+thread_local tls_wrap<int> abort_on_alloc_failure_suppressed = 0;
 
 }
 
@@ -169,11 +170,7 @@ namespace internal {
 
 #ifdef SEASTAR_ENABLE_ALLOC_FAILURE_INJECTION
 
-#ifdef __cpp_constinit
-thread_local constinit volatile int critical_alloc_section = 0;
-#else
-__thread volatile int critical_alloc_section = 0;
-#endif
+thread_local tls_wrap<volatile int> critical_alloc_section = 0;
 
 #endif  // SEASTAR_ENABLE_ALLOC_FAILURE_INJECTION
 
@@ -228,7 +225,7 @@ using std::optional;
 // is_reactor_thread gets set to true when memory::configure() gets called
 // it is used to identify seastar threads and hence use system memory allocator
 // for those threads
-static thread_local bool is_reactor_thread = false;
+static thread_local tls_wrap<bool> is_reactor_thread = false;
 
 // We default transparent hugepages to true since we prefer to transiently
 // use a transparent hugepage and then break it, to having the kernel
@@ -243,7 +240,7 @@ enum class types { allocs, frees, cross_cpu_frees, total_bytes_allocated, reclai
 using stats_array = std::array<uint64_t, static_cast<std::size_t>(types::enum_size)>;
 using stats_atomic_array = std::array<std::atomic_uint64_t, static_cast<std::size_t>(types::enum_size)>;
 
-static thread_local SEASTAR_CONSTINIT stats_array stats{};
+static thread_local tls_wrap<stats_array> stats{};
 std::array<stats_atomic_array, max_cpus> alien_stats{};
 
 static void increment_local(types stat_type, uint64_t size = 1) {
@@ -297,7 +294,7 @@ using allocate_system_memory_fn
 
 namespace bi = boost::intrusive;
 
-static thread_local uintptr_t local_expected_cpu_id = std::numeric_limits<uintptr_t>::max();
+static thread_local tls_wrap<uintptr_t> local_expected_cpu_id = std::numeric_limits<uintptr_t>::max();
 
 
 inline
@@ -646,7 +643,7 @@ struct cpu_pages {
     ~cpu_pages();
 };
 
-static thread_local cpu_pages cpu_mem;
+static thread_local tls_wrap<cpu_pages> cpu_mem;
 std::atomic<unsigned> cpu_pages::cpu_id_gen;
 cpu_pages* cpu_pages::all_cpus[max_cpus];
 
@@ -675,7 +672,7 @@ size_t get_heap_profiling_sample_rate() {
     return get_cpu_mem().heap_prof_sampler.sampling_interval();
 }
 
-static thread_local int64_t scoped_heap_profiling_embed_count = 0;
+static thread_local tls_wrap<int64_t> scoped_heap_profiling_embed_count = 0;
 
 scoped_heap_profiling::scoped_heap_profiling(size_t sample_rate) noexcept {
     ++scoped_heap_profiling_embed_count;
@@ -1578,12 +1575,12 @@ size_t object_size(void* ptr) {
     return cpu_pages::all_cpus[object_cpu_id(ptr)]->object_size(ptr);
 }
 
-static thread_local cpu_pages* cpu_mem_ptr = nullptr;
+static thread_local tls_wrap<cpu_pages*> cpu_mem_ptr = nullptr;
 
 // Mark as cold so that GCC8+ can move to .text.unlikely.
 [[gnu::cold]]
 static void init_cpu_mem() {
-    cpu_mem_ptr = &cpu_mem;
+    cpu_mem_ptr = static_cast<cpu_pages*>(&cpu_mem);
     cpu_mem.initialize();
 }
 
@@ -1972,7 +1969,7 @@ void set_min_free_pages(size_t pages) {
     get_cpu_mem().set_min_free_pages(pages);
 }
 
-static thread_local int report_on_alloc_failure_suppressed = 0;
+static thread_local tls_wrap<int> report_on_alloc_failure_suppressed = 0;
 
 class disable_report_on_alloc_failure_temporarily {
 public:
@@ -2011,7 +2008,7 @@ void set_dump_memory_diagnostics_on_alloc_failure_kind(std::string_view str) {
     }
 }
 
-static thread_local noncopyable_function<void(memory_diagnostics_writer)> additional_diagnostics_producer;
+static thread_local tls_wrap<noncopyable_function<void(memory_diagnostics_writer)>> additional_diagnostics_producer;
 
 void set_additional_diagnostics_producer(noncopyable_function<void(memory_diagnostics_writer)> producer) {
     additional_diagnostics_producer = std::move(producer);
@@ -2204,7 +2201,7 @@ void maybe_dump_memory_diagnostics(size_t size, bool is_aborting) {
         lvl = log_level::error;
     }
 
-    static thread_local logger::rate_limit rate_limit(std::chrono::seconds(10));
+    static thread_local tls_wrap<logger::rate_limit> rate_limit(std::chrono::seconds(10));
     dump_memory_diagnostics(lvl, rate_limit);
 
 

@@ -38,6 +38,7 @@
 #include <seastar/core/byteorder.hh>
 #include <seastar/core/print.hh>
 #include <seastar/core/shared_ptr.hh>
+#include <seastar/core/tls_wrap.hh>
 
 #include "core/scollectd-impl.hh"
 #include <seastar/util/assert.hh>
@@ -48,9 +49,10 @@ using seastar::metrics::impl::labels_type;
 
 void scollectd::type_instance_id::truncate(sstring& field, const char* field_desc) {
     if (field.size() > max_collectd_field_text_len) {
-        auto suffix_len = std::ceil(std::log10(++_next_truncated_idx)) + 1;
+        unsigned idx = ++_next_truncated_idx;
+        auto suffix_len = std::ceil(std::log10(idx)) + 1;
         sstring new_field(seastar::format(
-            "{}~{:d}", sstring(field.data(), max_collectd_field_text_len - suffix_len), _next_truncated_idx));
+            "{}~{:d}", sstring(field.data(), max_collectd_field_text_len - suffix_len), idx));
 
         logger.warn("Truncating \"{}\" to {} chars: \"{}\" -> \"{}\"", field_desc, max_collectd_field_text_len, field,
             new_field);
@@ -78,7 +80,7 @@ bool scollectd::type_instance_id::operator==(
 namespace scollectd {
 
 ::seastar::logger logger("scollectd");
-thread_local unsigned type_instance_id::_next_truncated_idx = 0;
+thread_local tls_wrap<unsigned> type_instance_id::_next_truncated_idx = 0;
 
 registration::~registration() {
     unregister();
@@ -990,7 +992,7 @@ metrics::impl::value_map get_value_map() {
 
 }
 
-thread_local scollectd::impl scollectd_impl;
+thread_local tls_wrap<scollectd::impl> scollectd_impl;
 
 scollectd::impl & scollectd::get_impl() {
     return scollectd_impl;

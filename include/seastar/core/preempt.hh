@@ -21,6 +21,7 @@
 
 #pragma once
 #include <atomic>
+#include <seastar/core/tls_wrap.hh>
 
 namespace seastar {
 
@@ -39,7 +40,7 @@ const preemption_monitor*& get_need_preempt_var();
 #else
 inline const preemption_monitor*& get_need_preempt_var() {
     static preemption_monitor bootstrap_preemption_monitor;
-    static thread_local const preemption_monitor* g_need_preempt = &bootstrap_preemption_monitor;
+    static thread_local tls_wrap<const preemption_monitor*> g_need_preempt = &bootstrap_preemption_monitor;
     return g_need_preempt;
 }
 #endif
@@ -91,7 +92,7 @@ scheduler_need_preempt() {
     // will be high if those tasks are slow, but this is debug mode anyway.
     // We still check if preemption was requested to allow lowres_clock
     // updates.
-    static thread_local unsigned counter = 0;
+    static thread_local tls_wrap<unsigned> counter = 0;
     return ++counter % 64 == 0 || monitor_need_preempt();;
 #endif
 }

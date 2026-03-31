@@ -562,7 +562,7 @@ namespace internal {
 #ifdef SEASTAR_BUILD_SHARED_LIBS
 const preemption_monitor*& get_need_preempt_var() {
     static preemption_monitor bootstrap_preemption_monitor;
-    static thread_local const preemption_monitor* g_need_preempt = &bootstrap_preemption_monitor;
+    static thread_local tls_wrap<const preemption_monitor*> g_need_preempt = &bootstrap_preemption_monitor;
     return g_need_preempt;
 }
 #endif
@@ -596,7 +596,7 @@ public:
     }
 };
 
-thread_local task_histogram this_thread_task_histogram;
+thread_local tls_wrap<task_histogram> this_thread_task_histogram;
 
 void task_histogram_add_task(const task& t) {
     this_thread_task_histogram.add(t);
@@ -685,8 +685,8 @@ template class timer<lowres_clock>;
 template class timer<manual_clock>;
 
 #ifdef SEASTAR_BUILD_SHARED_LIBS
-thread_local lowres_clock::time_point lowres_clock::_now;
-thread_local lowres_system_clock::time_point lowres_system_clock::_now;
+thread_local tls_wrap<lowres_clock::time_point> lowres_clock::_now;
+thread_local tls_wrap<lowres_system_clock::time_point> lowres_system_clock::_now;
 #endif
 
 reactor::signals::signals() : _pending_signals(0) {
@@ -2713,7 +2713,7 @@ bool reactor::task_queue::run_tasks() {
                 r.reset_preemption_monitor();
                 lowres_clock::update();
 
-                static thread_local logger::rate_limit rate_limit(std::chrono::seconds(10));
+                static thread_local tls_wrap<logger::rate_limit> rate_limit(std::chrono::seconds(10));
                 logger::lambda_log_writer writer([this] (auto it) { return do_dump(it); });
                 seastar_logger.log(log_level::warn, rate_limit, writer);
                 if (r._cfg.abort_on_too_long_task_queue) {
@@ -2731,7 +2731,7 @@ namespace {
 
 #ifdef SEASTAR_SHUFFLE_TASK_QUEUE
 void shuffle(task*& t, circular_buffer<task*>& q) {
-    static thread_local std::mt19937 gen = std::mt19937(std::default_random_engine()());
+    static thread_local tls_wrap<std::mt19937> gen{std::default_random_engine()()};
     std::uniform_int_distribution<size_t> tasks_dist{0, q.size() - 1};
     auto& to_swap = q[tasks_dist(gen)];
     std::swap(to_swap, t);
@@ -4036,10 +4036,10 @@ struct reactor_deleter {
     }
 };
 
-thread_local std::unique_ptr<reactor, reactor_deleter> reactor_holder;
+thread_local tls_wrap<std::unique_ptr<reactor, reactor_deleter>> reactor_holder;
 
-thread_local smp_message_queue** smp::_qs;
-thread_local std::thread::id smp::_tmain;
+thread_local tls_wrap<smp_message_queue**> smp::_qs;
+thread_local tls_wrap<std::thread::id> smp::_tmain;
 unsigned smp::count = 0;
 
 void smp::start_all_queues()
@@ -4768,7 +4768,7 @@ bool smp::pure_poll_queues() {
     return false;
 }
 
-__thread reactor* local_engine;
+thread_local tls_wrap<reactor*> local_engine;
 
 void report_exception(std::string_view message, std::exception_ptr eptr) noexcept {
     seastar_logger.error("{}: {}", message, eptr);
@@ -5123,8 +5123,9 @@ const smp& reactor::smp() const noexcept {
 namespace internal {
 
 scheduling_group_specific_thread_local_data** get_scheduling_group_specific_thread_local_data_ptr() noexcept {
-    static thread_local scheduling_group_specific_thread_local_data* data;
-    return &data;
+    static thread_local tls_wrap<scheduling_group_specific_thread_local_data*> data;
+    scheduling_group_specific_thread_local_data*& ref = data;
+    return &ref;
 }
 
 }
@@ -5139,7 +5140,7 @@ internal::no_such_scheduling_group(scheduling_group sg) {
 scheduling_group*
 internal::current_scheduling_group_ptr() noexcept {
     // Slow unless constructor is constexpr
-    static thread_local scheduling_group sg;
+    static thread_local tls_wrap<scheduling_group> sg;
     return &sg;
 }
 #endif

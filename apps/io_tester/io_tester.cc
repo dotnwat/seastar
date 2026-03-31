@@ -33,6 +33,7 @@
 #include <seastar/core/with_scheduling_group.hh>
 #include <seastar/core/metrics_api.hh>
 #include <seastar/core/io_intent.hh>
+#include <seastar/core/tls_wrap.hh>
 #include <seastar/util/assert.hh>
 #include <seastar/util/later.hh>
 #include <chrono>
@@ -69,7 +70,7 @@ using namespace boost::accumulators;
 static constexpr uint64_t extent_size_hint_alignment{1u << 20}; // 1MB
 
 static auto random_seed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-static thread_local std::default_random_engine random_generator(random_seed);
+static thread_local tls_wrap<std::default_random_engine> random_generator(random_seed);
 
 class context;
 enum class request_type { seqread, overwrite, randread, randwrite, append, cpu, unlink };
