@@ -4730,6 +4730,11 @@ void smp::configure(const smp_options& smp_opts, const reactor_options& reactor_
     if (smp_opts.lock_memory && smp_opts.lock_memory.get_value() && layout && !layout->ranges.empty()) {
         smp::setup_prefaulter(resources, std::move(*layout));
     }
+
+    for (auto idx = 0U; idx < tls_reg.idx; ++idx) {
+        auto v = tls_reg.wrappers[idx];
+        seastar_logger.info("TLS: {}", fmt::ptr(v));
+    }
 }
 
 bool smp::poll_queues() {
