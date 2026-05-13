@@ -958,6 +958,14 @@ client::client(const logger& l, void* s, client_options ops, socket socket, cons
     enqueue_zero_frame();
 }
 
+// GCC 15's coroutine-frame analysis raises a -Wmaybe-uninitialized
+// false positive on the structured-binding temporary fed by
+// `auto&& [msg_id, ht, data] = co_await read_response_frame_compressed(...)`
+// below. The warning is reported at the function-end brace.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 future<> client::loop(client_options ops, const socket_address& addr, const socket_address& local) {
     std::exception_ptr ep;
     try {
@@ -1057,6 +1065,9 @@ future<> client::loop(client_options ops, const socket_address& addr, const sock
     }
     _stopped.set_value();
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 client::client(const logger& l, void* s, const socket_address& addr, const socket_address& local)
         : client(l, s, client_options{}, make_socket(), addr, local)
@@ -1216,6 +1227,14 @@ future<> server::connection::send_unknown_verb_reply(std::optional<rpc_clock_typ
     });
 }
 
+// GCC 15's coroutine-frame analysis raises a -Wmaybe-uninitialized
+// false positive on the structured-binding temporary fed by the
+// `auto [expire, type, msg_id, data] = co_await ...` below. The
+// warning is reported at the function-end brace.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 future<> server::connection::process() {
     // hold onto connection pointer until the while loop exits
     auto conn_ptr = shared_from_this();
@@ -1280,6 +1299,9 @@ future<> server::connection::process() {
     }
     _stopped.set_value();
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 server::connection::connection(server& s, connected_socket&& fd, socket_address&& addr, const logger& l, void* serializer, connection_id id)
         : rpc::connection(std::move(fd), l, serializer, id)

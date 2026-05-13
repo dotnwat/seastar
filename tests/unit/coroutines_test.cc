@@ -409,6 +409,14 @@ SEASTAR_TEST_CASE(test_all_heterogeneous_types) {
     BOOST_REQUIRE_EQUAL(b, 2L);
 }
 
+// GCC 15's coroutine-frame analysis raises a -Wmaybe-uninitialized
+// false positive on the structured-binding temporary fed by
+// `co_await coroutine::all(...)` below. The warning is reported at
+// the function-end brace.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 SEASTAR_TEST_CASE(test_all_noncopyable_types) {
     auto [a] = co_await coroutine::all(
         [] () -> future<std::unique_ptr<int>> {
@@ -417,6 +425,9 @@ SEASTAR_TEST_CASE(test_all_noncopyable_types) {
     );
     BOOST_REQUIRE_EQUAL(*a, 6);
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 SEASTAR_TEST_CASE(test_all_throw_in_input_func) {
     int nr_completed = 0;
