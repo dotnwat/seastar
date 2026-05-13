@@ -628,14 +628,33 @@ struct future_state :  public future_state_base, private internal::uninitialized
             // creating an uninitialized promise and calling get_future()
             // on it. Gcc 12 started to catch some simple cases of this
             // at compile time, so we need to tell it that it's fine.
+            // -Wmaybe-uninitialized is GCC-only; clang puts both definite
+            // and maybe cases under -Wuninitialized so it doesn't need
+            // the additional suppression.
 #pragma GCC diagnostic ignored "-Wuninitialized"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             memmove(reinterpret_cast<char*>(&this->uninitialized_get()),
                    &x.uninitialized_get(),
                    internal::used_size<internal::maybe_wrap_ref<T>>::value);
 #pragma GCC diagnostic pop
         } else if (_u.has_result()) {
+            // Same cross-function -Wmaybe-uninitialized false positive
+            // as in clear(): both reads of x.uninitialized_get() are
+            // gated on _u.has_result() (which, after the base class
+            // move in the caller, mirrors the source's tag), so the
+            // value was constructed in x. GCC cannot prove the
+            // correlation across the move chain and flags the read.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
             this->uninitialized_set(std::move(x.uninitialized_get()));
             std::destroy_at(&x.uninitialized_get());
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
         }
     }
 
