@@ -699,6 +699,14 @@ make_maybe_proxied_connected_socket_impl(
     }
 }
 
+// GCC 15's coroutine-frame analysis raises a -Wmaybe-uninitialized
+// false positive on the structured-binding temporary fed by the
+// co_await below. The warning is reported at the function-end brace,
+// so the pragma must cover the whole coroutine body.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 future<accept_result>
 posix_server_socket_impl::accept() {
     while (true) { // exited via co_return
@@ -745,6 +753,9 @@ posix_server_socket_impl::accept() {
         }
     };
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 void
 posix_server_socket_impl::abort_accept() {

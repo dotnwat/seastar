@@ -125,6 +125,21 @@ public:
         }
     }
     basic_sstring(const basic_sstring& x) {
+#pragma GCC diagnostic push
+        // After default-construction only `u.internal.size` (and the
+        // terminator) is written; the rest of the union bytes remain
+        // indeterminate. is_internal() reads only u.internal.size and
+        // selects the internal branch, where the struct-copy of
+        // u.internal copies those trailing bytes -- which is legitimate
+        // and more efficient than a sized copy. GCC's analysis can't
+        // narrow x.is_internal() at compile time and so flags both
+        // branches as reading uninitialized memory.
+        // -Wmaybe-uninitialized is GCC-only; clang puts both definite
+        // and maybe cases under -Wuninitialized.
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
         if (x.is_internal()) {
             u.internal = x.u.internal;
         } else {
@@ -136,13 +151,19 @@ public:
             std::copy(x.u.external.str, x.u.external.str + x.u.external.size + padding(), u.external.str);
             u.external.size = x.u.external.size;
         }
+#pragma GCC diagnostic pop
     }
     basic_sstring(basic_sstring&& x) noexcept {
 #pragma GCC diagnostic push
         // Is a small-string construction is followed by this move constructor, then the trailing bytes
         // of x.u are not initialized, but copied. gcc complains, but it is both legitimate to copy
-        // these bytes, and more efficient than a variable-size copy
+        // these bytes, and more efficient than a variable-size copy.
+        // -Wmaybe-uninitialized is GCC-only; clang puts both definite
+        // and maybe cases under -Wuninitialized.
 #pragma GCC diagnostic ignored "-Wuninitialized"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
         u = x.u;
 #pragma GCC diagnostic pop
         x.u.internal.size = 0;
@@ -212,9 +233,22 @@ public:
             : basic_sstring(v.data(), v.size()) {
     }
     ~basic_sstring() noexcept {
+#pragma GCC diagnostic push
+        // is_external() reads u.internal.size; on a default-constructed
+        // sstring that field is initialized but the surrounding union
+        // bytes are not, and GCC's flow analysis cannot always prove
+        // the read is well-defined. Same rationale as the copy/move
+        // ctors above.
+        // -Wmaybe-uninitialized is GCC-only; clang puts both definite
+        // and maybe cases under -Wuninitialized.
+#pragma GCC diagnostic ignored "-Wuninitialized"
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
         if (is_external()) {
             std::free(u.external.str);
         }
+#pragma GCC diagnostic pop
     }
     basic_sstring& operator=(const basic_sstring& x) {
         basic_sstring tmp(x);

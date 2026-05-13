@@ -780,8 +780,10 @@ public:
             SEASTAR_ASSERT(dn.has_value()); // otherwise we couldn't have gotten here
 
             // a switch here might look overelaborate, however,
-            // the compiler will warn us if someone alters the definition of type
-            session_type t;
+            // the compiler will warn us if someone alters the definition of type.
+            // Initialize `t` so GCC's -Wmaybe-uninitialized analysis is
+            // satisfied even though the switch covers all enumerators today.
+            session_type t = session_type::CLIENT;
             switch (_type) {
             case type::CLIENT:
                 t = session_type::CLIENT;

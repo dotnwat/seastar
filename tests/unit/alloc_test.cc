@@ -717,7 +717,7 @@ void free_aligned_sized(void* ptr, size_t alignment, size_t size);
 SEASTAR_TEST_CASE(c23_free_sized) {
     auto p1 = malloc(100);
     free_sized(p1, 100);
-    void* p2;
+    void* p2 = nullptr;
     int r = posix_memalign(&p2, 1024, 4096);
     BOOST_REQUIRE_EQUAL(r, 0);
     free_aligned_sized(p2, 1024, 4096);

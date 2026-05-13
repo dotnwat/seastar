@@ -986,15 +986,6 @@ target_compile_features(seastar
 
 include (CheckCXXCompilerFlag)
 check_cxx_compiler_flag ("-Wno-maybe-uninitialized -Werror" MaybeUninitialized_FOUND)
-if (MaybeUninitialized_FOUND)
-  target_compile_options (seastar
-    PUBLIC
-      # With std::experimental::optional it is easy to hit
-      # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=88897.  We disable
-      # -Wmaybe-uninitialized in here since otherwise we would have to
-      # disable it on many types used inside optional<>.
-      -Wno-maybe-uninitialized)
-endif ()
 
 if (Seastar_SSTRING)
   target_compile_definitions (seastar

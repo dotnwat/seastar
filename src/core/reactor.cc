@@ -2083,6 +2083,18 @@ reactor::make_pipe() {
                                                                 file_desc::from_fd(pipe[1]));
 }
 
+// GCC 15's coroutine-frame analysis raises a -Wmaybe-uninitialized
+// false positive on the temporaries passed to coroutine::all() inside
+// this coroutine. The warning is reported at the function's closing
+// brace (the end of the coroutine state machine) referring to the
+// third argument's storage in the coroutine frame, but the value is
+// produced by the awaited sub-future before the destructured binding
+// reads it. Switching to lambdas does not help. Suppress for the
+// whole coroutine body since the diagnostic site is the function-end.
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 future<std::tuple<pid_t, file_desc, file_desc, file_desc>>
 reactor::spawn(std::string_view pathname_view,
                std::vector<sstring> argv,
@@ -2177,6 +2189,9 @@ reactor::spawn(std::string_view pathname_view,
         std::get<pipefd_read_end>(std::move(cout_pipe)),
         std::get<pipefd_read_end>(std::move(cerr_pipe)));
 }
+#if defined(__GNUC__) && !defined(__clang__)
+#pragma GCC diagnostic pop
+#endif
 
 static auto next_waitpid_timeout(std::chrono::milliseconds this_timeout) {
     constexpr std::chrono::milliseconds step_timeout(20);
